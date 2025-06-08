@@ -4,12 +4,9 @@ import numpy as np
 
 from typing import List, Dict
 from collections import defaultdict
-from src import utils 
+from src.utils import number_cols 
 
 
-number_cols = ['valence', 'year', 'acousticness', 'danceability', 'duration_ms',
-               'energy', 'explicit', 'instrumentalness', 'key', 'liveness',
-               'loudness', 'mode', 'popularity', 'speechiness', 'tempo']
 
 
 def get_song_data(song: Dict, spotify_data: pd.DataFrame):

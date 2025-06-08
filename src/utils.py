@@ -10,7 +10,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
 from pydantic import BaseModel 
-
 from annoy import AnnoyIndex
 
 

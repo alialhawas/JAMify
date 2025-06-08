@@ -54,5 +54,8 @@ add Smart Prompt Suggestions for Song Generation
 
 add Mocking API Calls 
 
-
 handel the audio file in a better way 
+
+
+things to get to mvp:
+- 

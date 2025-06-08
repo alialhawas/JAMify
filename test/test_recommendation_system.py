@@ -46,7 +46,7 @@ def test_invalid_request_structure():
         "songs": [{"title": "Missing Name Field"}]
     })
 
-    assert response.status_code == 422  # Unprocessable Entity due to validation error
+    assert response.status_code == 422 
 
 
 def test_health_check():
