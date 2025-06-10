@@ -1,9 +1,14 @@
-
+import os
 import pandas as pd
 import numpy as np
+import requests
+import redis
+import time 
 
 from annoy import AnnoyIndex
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, FastAPI, Request
+from fastapi.responses import RedirectResponse, JSONResponse
+from urllib.parse import urlencode
 
 from typing import List, Dict
 from sklearn.cluster import KMeans
@@ -16,6 +21,14 @@ from src.utils import number_cols, SongList, GenSongInput
 from src.song_Gen.murka_test import generate_song, upload_file_to_mureka
 from src.song_Gen.youTfileCreateor import download_songs_sample
 
+
+
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+SCOPES = "user-top-read"
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 app = FastAPI()
 
@@ -83,16 +96,14 @@ def recommend_songs(song_list: List[Dict], spotify_data: pd.DataFrame, n_songs=1
 @app.on_event("startup")
 def startup_event():
     """
-    here we do two things here two predictdict teh genre of the songs and we create the annoy index for the songs simmlitifys
+    here we do two things here two predictdict the genre of the songs and we create the annoy index for the songs simmlitifys
     """
-
 
     global data, song_cluster_pipeline, annoy_index, index_map
 
     data = pd.read_csv("data/data.csv")
     data["first_artist"] = data["artists"].apply(lambda x: eval(x)[0] if isinstance(x, str) else x)
 
-    # --- Genre prediction setup ---
     genre_df = pd.read_csv("data/data_by_genres.csv")
 
     features = [
@@ -193,3 +204,61 @@ def health_check():
     return {"status": "unhealthy"}, 500
 
 
+@app.get("/login")
+def login():
+    query_params = urlencode({
+        "client_id": CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": REDIRECT_URI,
+        "scope": SCOPES,
+        "show_dialog": "true"
+    })
+    return RedirectResponse(url=f"https://accounts.spotify.com/authorize?{query_params}")
+
+
+@app.get("/callback")
+def callback(request: Request, code: str):
+    token_url = "https://accounts.spotify.com/api/token"
+    payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET
+    }
+
+    res = requests.post(token_url, data=payload)
+    if res.status_code != 200:
+        return JSONResponse(status_code=400, content={"error": "Token exchange failed"})
+
+    token_info = res.json()
+    access_token = token_info["access_token"]
+    refresh_token = token_info.get("refresh_token")
+    expires_in = token_info["expires_in"]
+
+    user_res = requests.get("https://api.spotify.com/v1/me", headers={
+        "Authorization": f"Bearer {access_token}"
+    })
+    user_info = user_res.json()
+    user_id = user_info["id"]
+
+    r.set(f"spotify:{user_id}:access_token", access_token)
+    r.set(f"spotify:{user_id}:refresh_token", refresh_token)
+    r.set(f"spotify:{user_id}:expires_at", str(int(time.time()) + expires_in - 10))
+
+    return JSONResponse(content={"message": "Login successful", "user_id": user_id})
+
+
+@app.get("/top-artists")
+def get_top_artists(user_id: str):
+    access_token = r.get(f"spotify:{user_id}:access_token")
+    if not access_token:
+        return JSONResponse(status_code=401, content={"error": "User not authenticated"})
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    res = requests.get("https://api.spotify.com/v1/me/top/artists", headers=headers)
+
+    if res.status_code == 401:
+        return JSONResponse(status_code=401, content={"error": "Token expired or invalid"})
+
+    return res.json()

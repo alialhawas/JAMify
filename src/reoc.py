@@ -7,8 +7,6 @@ from collections import defaultdict
 from src.utils import number_cols 
 
 
-
-
 def get_song_data(song: Dict, spotify_data: pd.DataFrame):
     try:
         song_data = spotify_data[(spotify_data['name'] == song['name']) & (spotify_data['year'] == song['year'])].iloc[0]

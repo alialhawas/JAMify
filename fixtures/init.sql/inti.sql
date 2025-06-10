@@ -8,10 +8,9 @@ CREATE DATABASE music_db;
 -- Step 3: Create schema (without using "music_db" prefix)
 CREATE SCHEMA music;
 
--- Step 4: Create the table inside the schema
 CREATE TABLE music.songs (
     song_id TEXT NOT NULL,    
-    user_id TEXT NOT NULL,  -- Changed "user" to "user_id" (as "user" is a reserved keyword)
+    user_id TEXT NOT NULL, 
     song_name VARCHAR(255) NOT NULL, 
     artist_id TEXT NOT NULL,        
     artist_name VARCHAR(255) NOT NULL, 
@@ -23,6 +22,18 @@ CREATE TABLE music.songs (
     popularity INTEGER CHECK (popularity >= 0 AND popularity <= 100), 
     preview_url TEXT,
 
-    -- Composite Primary Key (ensures song_id + user_id are unique together)
     PRIMARY KEY (song_id, user_id)
+);
+
+
+CREATE TABLE music.artists (
+    artist_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    genres TEXT[],
+    popularity INTEGER CHECK (popularity >= 0 AND popularity <= 100),
+    image TEXT,
+    external_url TEXT,
+    PRIMARY KEY (artist_id, user_id)
+
 );
