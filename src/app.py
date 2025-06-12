@@ -18,17 +18,19 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from src.reoc import flatten_dict_list, get_mean_vector
 from src.utils import number_cols, SongList, GenSongInput
+
 from src.song_Gen.murka_test import generate_song, upload_file_to_mureka
 from src.song_Gen.youTfileCreateor import download_songs_sample
 
-
+from src.database.postgres.index import get_db_conn, release_db_conn, close_db_pools ,insert_top_artists, init_db_pools
+from src.database.redis.index import get_redis
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 SCOPES = "user-top-read"
 
-r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+# r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 app = FastAPI()
 
@@ -36,26 +38,6 @@ annoy_index = None
 index_map = {}  # maps Annoy index ID to original DataFrame index
 
 # TODO move this def to utils (handle circular imports)
-# def recommend_songs(song_list: List[Dict], spotify_data: pd.DataFrame, n_songs=10):
-#     metadata_cols = ['name', 'year', 'artists']
-#     song_dict = flatten_dict_list(song_list) # -> {'name': ['Blinding Lights', 'Bad Guy', 'Shape of You'], 'year': [2019, 2019, 2017]}
-#     song_center = get_mean_vector(song_list, spotify_data)
-
-#     if song_center is None:
-#         raise ValueError("None of the input songs were found in the database.")
-
-#     scaler = song_cluster_pipeline.named_steps['scaler']
-#     query_vector = scaler.transform(song_center.reshape(1, -1))[0]
-
-#     idxs = annoy_index.get_nns_by_vector(query_vector, n_songs + len(song_list))
-#     recs = spotify_data.iloc[idxs]
-
-
-#     recs = recs[~recs['name'].isin(song_dict['name'])]
-
-#     return recs[metadata_cols].head(n_songs).to_dict(orient='records')
-
-
 def recommend_songs(song_list: List[Dict], spotify_data: pd.DataFrame, n_songs=10):
     metadata_cols = ['name', 'year', 'artists', 'predicted_genre']
 
@@ -101,6 +83,10 @@ def startup_event():
 
     global data, song_cluster_pipeline, annoy_index, index_map
 
+
+    init_db_pools()
+
+#   TODO read this from db and every time you pull a song you add it the data 
     data = pd.read_csv("data/data.csv")
     data["first_artist"] = data["artists"].apply(lambda x: eval(x)[0] if isinstance(x, str) else x)
 
@@ -141,31 +127,11 @@ def startup_event():
     annoy_index.build(n_trees=10)
     print("✅ Annoy index built and genres assigned.")
 
-    # global data, song_cluster_pipeline, annoy_index, index_map
-
-    # data = pd.read_csv("data/data.csv")
-    # data["first_artist"] = data["artists"].apply(lambda x: eval(x)[0] if isinstance(x, str) else x)
-
-    # song_cluster_pipeline = Pipeline([
-    #     ('scaler', StandardScaler()),
-    #     ('kmeans', KMeans(n_clusters=20, verbose=False))
-    # ])
-    # X = data[number_cols]
-    # song_cluster_pipeline.fit(X)
-    # data['cluster_label'] = song_cluster_pipeline.predict(X)
-
-    # # 🧠 Build Annoy index
-    # scaler = song_cluster_pipeline.named_steps['scaler']
-    # X_scaled = scaler.transform(X)
-    # dim = X_scaled.shape[1]
-    # annoy_index = AnnoyIndex(dim, 'euclidean')
-
-    # for i, vector in enumerate(X_scaled):
-    #     annoy_index.add_item(i, vector)
-    #     index_map[i] = i
-
-    # annoy_index.build(n_trees=10)
-    # print("✅ Annoy index built.")
+@app.get("/health")
+def health_check():
+    if data is not None and annoy_index is not None:
+        return {"status": "ok"}
+    return {"status": "unhealthy"}, 500
 
 
 @app.post("/recommend")
@@ -195,14 +161,6 @@ def gen_song(input_data: GenSongInput):
         return {"status": "success", "generated_song": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/health")
-def health_check():
-    if data is not None and annoy_index is not None:
-        return {"status": "ok"}
-    return {"status": "unhealthy"}, 500
-
 
 @app.get("/login")
 def login():
@@ -242,16 +200,20 @@ def callback(request: Request, code: str):
     user_info = user_res.json()
     user_id = user_info["id"]
 
-    r.set(f"spotify:{user_id}:access_token", access_token)
-    r.set(f"spotify:{user_id}:refresh_token", refresh_token)
-    r.set(f"spotify:{user_id}:expires_at", str(int(time.time()) + expires_in - 10))
+    redis_con = get_redis() # redis client 
+
+    redis_con.set(f"spotify:{user_id}:access_token", access_token)
+    redis_con.set(f"spotify:{user_id}:refresh_token", refresh_token)
+    redis_con.set(f"spotify:{user_id}:expires_at", str(int(time.time()) + expires_in - 10))
 
     return JSONResponse(content={"message": "Login successful", "user_id": user_id})
 
 
 @app.get("/top-artists")
 def get_top_artists(user_id: str):
-    access_token = r.get(f"spotify:{user_id}:access_token")
+    redis_con = get_redis()
+    access_token = redis_con.get(f"spotify:{user_id}:access_token")
+    
     if not access_token:
         return JSONResponse(status_code=401, content={"error": "User not authenticated"})
 
@@ -261,4 +223,20 @@ def get_top_artists(user_id: str):
     if res.status_code == 401:
         return JSONResponse(status_code=401, content={"error": "Token expired or invalid"})
 
+
+    artist_data = res.json().get("items", [])
+
+
+    try:
+        conn = get_db_conn()
+        insert_top_artists(user_id, artist_data, conn)
+        release_db_conn(conn)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"DB insert failed: {str(e)}"})
+
     return res.json()
+
+
+@app.on_event("shutdown")
+def shutdown():
+    close_db_pools()
