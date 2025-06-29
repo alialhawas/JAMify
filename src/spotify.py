@@ -123,7 +123,7 @@ def insert_top_artists(user_id: str, artists: list, conn):
         conn.commit()
 
 
-# # TODO add this to db
+# TODO add this to db
 
 import psycopg2
 

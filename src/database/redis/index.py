@@ -2,9 +2,8 @@
 import redis
 import os
 
-REDIS_POOL = None
-redis_client = None
-
+REDIS_POOL= None
+REDIS_CLIENT = None
 
 def init_redis_pool():
         global REDIS_POOL, redis_client

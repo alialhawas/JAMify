@@ -45,7 +45,7 @@ def generate_lyrics(prompt):
 
 
 # TODO handel the aduio files in a better way 
-def upload_file_to_mureka(file_path='./best_30s.mp3', purpose="reference"):
+def upload_file_to_mureka(file_path, purpose="reference"):
     url = "https://api.mureka.ai/v1/files/upload"
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -67,7 +67,7 @@ def upload_file_to_mureka(file_path='./best_30s.mp3', purpose="reference"):
         raise Exception(f"Upload failed: {response.status_code}, {response.text}")
 
 
-def generate_song(lyricsPrompt, model="auto", prompt=None, reference_id=None, poll_interval=2, timeout=60):
+def generate_song(lyricsPrompt, model="mureka-6", prompt=None, reference_id=None, poll_interval=2, timeout=60):
 
     lyrics = generate_lyrics(prompt=lyricsPrompt)
 
@@ -135,11 +135,8 @@ def generate_song(lyricsPrompt, model="auto", prompt=None, reference_id=None, po
             raise TimeoutError("timed out after waiting too long for the songGen_api")
 
 
-
 # prompt = "r&b, slow, passionate, male vocal"
 
 # full_lyrics, song_path = generate_song(lyrics, reference_id='74454136848388')
 
-
-
-
+# print(upload_file_to_mureka('./Anne-Marie - Ciao Adios [Official Video]_30s.mp3'))
