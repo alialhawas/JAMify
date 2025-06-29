@@ -21,19 +21,22 @@ CREATE TABLE music.songs (
     external_url TEXT,            
     popularity INTEGER CHECK (popularity >= 0 AND popularity <= 100), 
     preview_url TEXT,
+    rank INTEGER NOT NULL ,
+    time_range TEXT,
 
     PRIMARY KEY (song_id, user_id)
 );
 
 
 CREATE TABLE music.artists (
-    artist_id TEXT PRIMARY KEY,
+    artist_id TEXT not NULL,
     user_id TEXT NOT NULL,
     name VARCHAR(255) NOT NULL,
     genres TEXT[],
     popularity INTEGER CHECK (popularity >= 0 AND popularity <= 100),
     image TEXT,
     external_url TEXT,
+    rank INTEGER NOT NULL ,
     PRIMARY KEY (artist_id, user_id)
 
 );

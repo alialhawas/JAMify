@@ -58,4 +58,9 @@ handel the audio file in a better way
 
 
 things to get to mvp:
+
+1- Integrage FE 
+2- Get user freatures on callback
+3- Download top tracks on callback 
+4- Add Melody Mirror (A Reflection of Your Listening Habits)
 - 

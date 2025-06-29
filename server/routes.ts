@@ -11,9 +11,6 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || "";
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || "";
 const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:5000/api/auth/callback";
 
-if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-  console.error("Missing Spotify credentials. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.");
-}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // SPOTIFY AUTH ROUTES
