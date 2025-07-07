@@ -1,6 +1,9 @@
 import pandas as pd
 import requests
+import asyncio
 import httpx
+
+from functools import partial
 
 from fastapi import HTTPException
 
@@ -11,8 +14,10 @@ from sklearn.pipeline import Pipeline
  
 from annoy import AnnoyIndex
 
-from src.database.postgres.index import get_db_conn, release_db_conn ,insert_top_artists, insert_top_tracks
+from src.database.postgres.index import get_db_conn, release_db_conn, insert_top_artists, insert_top_tracks
 from src.database.redis.index import get_redis
+
+from src.song_Gen.youTfileCreateor import download_song_sample_by_name, load_clips
 
 data: pd.DataFrame = None
 song_cluster_pipeline: Pipeline =  Pipeline([
@@ -25,7 +30,6 @@ index_map: dict = {}
 number_cols = ['valence', 'year', 'acousticness', 'danceability', 'duration_ms',
                'energy', 'explicit', 'instrumentalness', 'key', 'liveness',
                'loudness', 'mode', 'popularity', 'speechiness', 'tempo']
-
 
 
 def search_song_on_spotify(song_name: str, artist: str = "", access_token: str = "") -> dict:
@@ -46,7 +50,7 @@ def search_song_on_spotify(song_name: str, artist: str = "", access_token: str =
     return items[0] if items else {}
 
 
-# all or this based on the paper of 2002 music an dprosnlitic
+# TODO add the paper music and persnialy to the docs for refrnce
 def generate_music_personality(avg_features: dict) -> str:
     energy = avg_features["energy"]
     valence = avg_features["valence"]
@@ -111,7 +115,6 @@ def compute_music_dna(tracks):
     }
 
 
-
 def detect_evolution(tracks):
     first = tracks[0]
     last = tracks[-1]
@@ -158,6 +161,9 @@ def user_tracks(user_id: str, time_range: str = "long_term") -> dict:
     insert_top_tracks(user_id, tracks, time_range, conn)
     release_db_conn(conn)
 
+    load_clips(tracks[:20], redis_con)
+    
+
 
 async def user_artiest(user_id: str, time_range: str = "long_term"):
     redis_con = get_redis()
@@ -184,5 +190,14 @@ async def user_artiest(user_id: str, time_range: str = "long_term"):
     release_db_conn(conn)
 
 
+async def async_download_song_sample_by_name(song_name: str, artist_name: str):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, partial(download_song_sample_by_name, song_name, artist_name))
 
 
+async def asyncget_preview(songs: list[dict]) -> list[str]:
+    tasks = [
+        async_download_song_sample_by_name(song["song_name"], song["artist_name"])
+        for song in songs
+    ]
+    return await asyncio.gather(*tasks)

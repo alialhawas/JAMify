@@ -60,7 +60,8 @@ handel the audio file in a better way
 things to get to mvp:
 
 1- Integrage FE 
-2- Get user freatures on callback
-3- Download top tracks on callback 
-4- Add Melody Mirror (A Reflection of Your Listening Habits)
-- 
+2- Get user freatures on callback (Done)
+3- Download top tracks on callback (Done)
+4- Add Melody Mirror (A Reflection of Your Listening Habits) (done)
+5- add CF to recomandions api (inproces)
+6- create all 
