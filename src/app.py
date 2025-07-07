@@ -32,19 +32,16 @@ from src.utils import (
 from src.schemas import SongList, GenSongInput, MirrorInput
 
 from src.song_Gen.murka_test import generate_song, upload_file_to_mureka
-from src.song_Gen.youTfileCreateor import download_song_sample
+from src.song_Gen.youTfileCreateor import download_song_sample, download_song_sample_by_name
 
 from src.database.postgres.index import (
     get_db_conn,
     release_db_conn,
     close_db_pools,
-    insert_top_artists,
     init_db_pools,
-    insert_top_tracks,
 )
 
 from src.database.redis.index import get_redis
-
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
@@ -55,7 +52,6 @@ app = FastAPI()
 
 annoy_index = None
 index_map = {}  # maps Annoy index ID to original DataFrame index
-
 
 features = [
 'acousticness', 'danceability', 'duration_ms', 'energy',
@@ -94,9 +90,6 @@ def recommend_songs(song_list: List[Dict], spotify_data: pd.DataFrame, n_songs=1
     recs = spotify_data.iloc[idxs]
 
     recs = recs[~recs['name'].isin(song_dict['name'])]
-
-    # recs = recs[recs['predicted_genre'].isin(input_genres)]
-    print (recs.columns)
 
     return recs[metadata_cols + features].head(n_songs).to_dict(orient='records')
 
@@ -145,7 +138,9 @@ def startup_event():
         annoy_index.add_item(i, vector)
         index_map[i] = i
 
+    # TODO add annoy_index to the reconmandions api (annoy_index.get_nns_by_vector(query_vector, 10))
     annoy_index.build(n_trees=10)
+
     print("✅ Annoy index built and genres assigned.")
 
 @app.get("/health")
@@ -170,16 +165,18 @@ def gen_song(input_data: GenSongInput):
         if input_data.youTube_link:
             download_song_sample(youtube_url=input_data.youTube_link)
             ref_id = upload_file_to_mureka()
-            result = generate_song(lyricsPrompt=input_data.lyric_prompt,
+            full_lyrics,audio_data = generate_song(lyricsPrompt=input_data.lyric_prompt,
                 prompt=input_data.song_prompt,
                 reference_id=ref_id
             )
         else:
-            result = generate_song(
+
+            full_lyrics,audio_data = generate_song(
                 lyricsPrompt=input_data.lyric_prompt,
                 prompt=input_data.song_prompt
             )
-        return {"status": "success", "generated_song": result}
+        return {"status": "success", "full_lyrics": full_lyrics, "audio_data": audio_data}
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -198,6 +195,7 @@ def login():
 @app.get("/callback")
 async def callback(request: Request, code: str):
     token_url = "https://accounts.spotify.com/api/token"
+
     payload = {
         "grant_type": "authorization_code",
         "code": code,
@@ -223,19 +221,21 @@ async def callback(request: Request, code: str):
         user_info = user_res.json()
         user_id = user_info["id"]
 
-    redis_con = get_redis()  # replace with async Redis if using aioredis etc.
+    redis_con = get_redis()  # TODO use aioredis later
     redis_con.set(f"spotify:{user_id}:access_token", access_token)
     redis_con.set(f"spotify:{user_id}:refresh_token", refresh_token)
     redis_con.set(f"spotify:{user_id}:expires_at", str(int(time.time()) + expires_in - 10))
 
-    await asyncio.gather(
-        user_artiest(user_id, 'short_term'),
-        user_artiest(user_id, 'medium_term'),
-        user_artiest(user_id, 'long_term'),
-        asyncio.to_thread(user_tracks, user_id, 'short_term'),
-        asyncio.to_thread(user_tracks, user_id, 'medium_term'),
-        asyncio.to_thread(user_tracks, user_id, 'long_term'),
-    )
+    # To make it as backgroup task (fire and forget)
+    asyncio.create_task(user_artiest(user_id, 'short_term'))
+    asyncio.create_task(user_artiest(user_id, 'medium_term'))
+    asyncio.create_task(user_artiest(user_id, 'long_term'))
+
+    asyncio.create_task(asyncio.to_thread(user_tracks, user_id, 'short_term'))
+    asyncio.create_task(asyncio.to_thread(user_tracks, user_id, 'medium_term'))
+    asyncio.create_task(asyncio.to_thread(user_tracks, user_id, 'long_term'))
+
+
     return JSONResponse(content={"message": "Login successful", "user_id": user_id})
 
 
@@ -266,7 +266,7 @@ def get_top_artists(
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"error": f"Fetching from DB failed: {str(e)}"}
+            content={"error": f"Fetching user data from DB failed: {str(e)}"}
         )
     
     finally:
@@ -281,7 +281,7 @@ def get_top_artists(
 
 
 @app.get("/top-tracks")
-def get_top_tracks(
+async def get_top_tracks(
 
     user_id: str = Query(..., 
         min_length=5,
@@ -309,7 +309,7 @@ def get_top_tracks(
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"error": f"Fetching from DB failed: {str(e)}"}
+            content={"error": f"Fetching user data from DB failed: {str(e)}"}
         )
     
     finally:
@@ -335,6 +335,7 @@ def analyze_mirror_melody(input_data: MirrorInput):
         for key in features[0].__fields__.keys()
     }
     personality = generate_music_personality(avg)
+    
     return {
         "personality": personality,
         "average_features": avg

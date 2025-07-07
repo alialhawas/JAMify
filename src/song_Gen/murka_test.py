@@ -44,7 +44,7 @@ def generate_lyrics(prompt):
         return f"Error {response.status_code}: {response.text}"
 
 
-# TODO handel the aduio files in a better way 
+# TODO handle the aduio files in a better way 
 def upload_file_to_mureka(file_path, purpose="reference"):
     url = "https://api.mureka.ai/v1/files/upload"
     headers = {
@@ -126,7 +126,7 @@ def generate_song(lyricsPrompt, model="mureka-6", prompt=None, reference_id=None
                 f.write(audio_data)
             print(f"Song downloaded: {filename}")
 
-            return full_lyrics, filename
+            return full_lyrics, audio_data
 
         elif status == "failed":
             raise Exception(f"generation failed: {poll_data.get('failed_reason')}")
