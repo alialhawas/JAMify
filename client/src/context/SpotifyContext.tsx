@@ -1,6 +1,6 @@
 import { createContext, useState, useEffect, useContext, ReactNode } from "react";
 import { SpotifyProfile, UserStats, RecommendedTrack } from "@/types";
-import { getAccessTokenFromUrl, getUserProfile, refreshAccessToken, getUserStats, getRecommendations } from "@/lib/spotify";
+import { getAccessTokenFromUrl, getUserProfile, refreshAccessToken, getUserStats, getRecommendations, checkDataFreshness } from "@/lib/spotify";
 import { useToast } from "@/hooks/use-toast";
 
 interface SpotifyContextType {
@@ -80,8 +80,19 @@ export function SpotifyProvider({ children }: { children: ReactNode }) {
     if (!accessToken) return;
     
     try {
-      const stats = await getUserStats(accessToken);
-      setUserStats(stats);
+      // Check if we need to refresh the data
+      const { shouldRefresh, lastFetchDate } = await checkDataFreshness(accessToken);
+      
+      if (shouldRefresh) {
+        console.log("Fetching fresh user stats data");
+        const stats = await getUserStats(accessToken);
+        setUserStats(stats);
+      } else {
+        console.log(`Using cached stats data from ${lastFetchDate?.toLocaleString()}`);
+        // The server is using cached data when available, so we just need to fetch
+        const stats = await getUserStats(accessToken);
+        setUserStats(stats);
+      }
     } catch (error) {
       console.error("Failed to load user stats:", error);
       toast({
@@ -96,6 +107,17 @@ export function SpotifyProvider({ children }: { children: ReactNode }) {
     if (!accessToken) return;
     
     try {
+      // Check if we need to refresh the data (we're reusing the same check since both
+      // stats and recommendations use the same freshness policy)
+      const { shouldRefresh, lastFetchDate } = await checkDataFreshness(accessToken);
+      
+      if (shouldRefresh) {
+        console.log("Fetching fresh recommendations data");
+      } else {
+        console.log(`Using cached recommendations data from ${lastFetchDate?.toLocaleString()}`);
+      }
+      
+      // The server will handle returning cached data if it's available
       const recs = await getRecommendations(accessToken);
       setRecommendations(recs);
     } catch (error) {
@@ -109,7 +131,7 @@ export function SpotifyProvider({ children }: { children: ReactNode }) {
   };
 
   const login = () => {
-    window.location.href = "/api/auth/login";
+    window.location.href = "https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/login?user_id=user123";
   };
 
   const logout = () => {

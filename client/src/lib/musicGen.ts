@@ -57,15 +57,12 @@ export async function getRecommendationsFromSong(
   seedSongs: Array<{ name: string; year: number }>
 ): Promise<any[]> {
   try {
-    const response = await fetch('http://localhost:5001/recommend', {
+    const response = await fetch('/api/recommendations/custom', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        songs: seedSongs,
-        n_songs: 5 
-      })
+      body: JSON.stringify({ seedSongs })
     });
 
     if (!response.ok) {

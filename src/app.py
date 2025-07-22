@@ -7,8 +7,9 @@ from typing import List, Dict
 import pandas as pd
 import numpy as np
 import httpx
+import jwt
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query,status
 from fastapi.responses import RedirectResponse, JSONResponse
 
 from annoy import AnnoyIndex
@@ -27,12 +28,18 @@ from src.utils import (
     detect_evolution,
     user_tracks,
     user_artiest,
+    create_jwt,
+    get_current_user,
+    user_key_func,
+    get_user_id_from_jwt
 )
+
+
 
 from src.schemas import SongList, GenSongInput, MirrorInput
 
-from src.song_Gen.murka_test import generate_song, upload_file_to_mureka
-from src.song_Gen.youTfileCreateor import download_song_sample, download_song_sample_by_name
+from src.song_Gen.murka import generate_song, upload_file_to_mureka
+from src.song_Gen.youTfileCreateor import download_song_sample
 
 from src.database.postgres.index import (
     get_db_conn,
@@ -43,12 +50,55 @@ from src.database.postgres.index import (
 
 from src.database.redis.index import get_redis
 
+from fastapi.middleware.cors import CORSMiddleware
+
+from fastapi import FastAPI, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 SCOPES = "user-top-read"
 
+ENV = os.getenv('ENV')
+
+JWT_SECRET =  os.getenv("JWT_SECRET") 
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
+
 app = FastAPI()
+
+
+@app.middleware("http")
+async def inject_user(request: Request, call_next):
+    try:
+        request.state.user_id = get_current_user(request)
+    except:
+        request.state.user_id = get_remote_address(request)
+    return await call_next(request)
+
+limiter = Limiter(key_func=user_key_func)
+
+
+app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+    status_code=429,
+    content={"detail": "Rate limit exceeded"}
+))
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+allowed_methods = os.getenv("ALLOWED_METHODS", "").split(",")
+allowed_headers = os.getenv("ALLOWED_HEADERS", "").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in allowed_origins],  
+    allow_credentials=True,  #  to allow cookies
+    allow_methods=[method.strip() for method in allowed_methods], 
+    allow_headers=[header.strip() for header in allowed_headers], 
+)
 
 annoy_index = None
 index_map = {}  # maps Annoy index ID to original DataFrame index
@@ -159,8 +209,19 @@ def recommend(song_input: SongList):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/recommendHypird")
+def recommend(song_input: SongList):
+    try:
+        input_songs = [song.dict() for song in song_input.songs]
+        recommendations = recommend_songs(input_songs, data, song_input.n_songs)
+        return {"recommendations": recommendations}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/genSong")
-def gen_song(input_data: GenSongInput):
+@limiter.limit("5/hour")
+def gen_song(request: Request, input_data: GenSongInput):
     try:
         if input_data.youTube_link:
             download_song_sample(youtube_url=input_data.youTube_link)
@@ -222,11 +283,22 @@ async def callback(request: Request, code: str):
         user_id = user_info["id"]
 
     redis_con = get_redis()  # TODO use aioredis later
-    redis_con.set(f"spotify:{user_id}:access_token", access_token)
-    redis_con.set(f"spotify:{user_id}:refresh_token", refresh_token)
-    redis_con.set(f"spotify:{user_id}:expires_at", str(int(time.time()) + expires_in - 10))
 
-    # To make it as backgroup task (fire and forget)
+    redis_con.set(f"spotify:{user_id}:access_token", access_token, ex=expires_in)
+    redis_con.set(f"spotify:{user_id}:refresh_token", refresh_token)
+    redis_con.set(f"spotify:{user_id}:expires_at", int(time.time()) + expires_in - 10, ex=expires_in)
+
+
+    redis_con.hmset(f"spotify:{user_id}:tokens", {
+    "access_token": access_token,
+    "refresh_token": refresh_token,
+    "expires_at": expires_in
+    })
+
+
+    """ To make it as backgroup task (fire and forget) createed new procesing for
+      each one havey on cpu but increate peformnace"""
+    
     asyncio.create_task(user_artiest(user_id, 'short_term'))
     asyncio.create_task(user_artiest(user_id, 'medium_term'))
     asyncio.create_task(user_artiest(user_id, 'long_term'))
@@ -235,18 +307,37 @@ async def callback(request: Request, code: str):
     asyncio.create_task(asyncio.to_thread(user_tracks, user_id, 'medium_term'))
     asyncio.create_task(asyncio.to_thread(user_tracks, user_id, 'long_term'))
 
+    jwt_token = create_jwt(user_id=user_id)
+    
+    callback_url = os.getenv("CALLBACK_URL")
+    response = RedirectResponse(url=callback_url)
+    
+    response.set_cookie(
+        key="jwt",
+        value=jwt_token,
+        httponly=True,
+        secure=False,  # ✅ Set to False **only** for local dev; True in prod with HTTPS
+        samesite="Lax",  # or "None" if frontend is hosted on a different domain
+        max_age=3600 * 2,
+        path="/"
+    )    
 
-    return JSONResponse(content={"message": "Login successful", "user_id": user_id})
+    return response
 
 
 @app.get("/top-artists")
 def get_top_artists(
-    user_id: str = Query(..., 
-        min_length=5,
-        description="User ID must be at least 5 characters long and not just whitespace"
-    ),
+    request: Request,
     period: str = Query(..., pattern="^(short_term|medium_term|long_term)$")
 ):
+    
+    token = request.cookies.get("jwt")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
+
+    user_id = get_user_id_from_jwt(token)
+
     query = """
         SELECT name, popularity, image, time_range, rank
         FROM music.artists
@@ -279,21 +370,18 @@ def get_top_artists(
     return JSONResponse(content={"top-artiest": result})
 
 
-
 @app.get("/top-tracks")
 async def get_top_tracks(
-
-    user_id: str = Query(..., 
-        min_length=5,
-        description="User ID must be at least 5 characters long and not just whitespace"
-    ),
+    request: Request,
     period: str = Query(..., pattern="^(short_term|medium_term|long_term)$")
-
 ):
+    
+    token = request.cookies.get("jwt")
 
-    if not user_id.strip():
-        raise HTTPException(status_code=400, detail="User ID must not be empty or just whitespace")
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
 
+    user_id = get_user_id_from_jwt(token) 
     query = """
         SELECT song_name, artist_name, image1 , image2 , image3, popularity, "rank", time_range
         FROM music.songs
@@ -384,6 +472,26 @@ def music_dna(input_data: MirrorInput):
 @app.post("/mirror/evolution")
 def listening_evolution(input_data: MirrorInput):
     return detect_evolution(input_data.tracks)
+
+
+@app.get("/verify-jwt")
+async def verify_jwt(request: Request):
+    token = request.cookies.get("jwt")
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload["user_id"]
+        return {"user_id": user_id, "status": "ok"}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+
+@app.get('get-grane')
+def get
 
 @app.on_event("shutdown")
 def shutdown():

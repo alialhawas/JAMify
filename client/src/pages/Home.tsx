@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSpotifyOperations } from "@/hooks/useSpotify";
 import { LoginModal } from "@/components/modals/LoginModal";
-import { MusicGenerator } from "@/components/music/MusicGenerator";
+import { JamifyMusicGenerator } from "@/components/music/JamifyMusicGenerator";
 import { MusicPlayer } from "@/components/music/MusicPlayer";
 import { RecommendationCard } from "@/components/music/RecommendationCard";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -42,7 +42,7 @@ export default function Home() {
       
       {/* Music Generation Module */}
       <div className="mb-12">
-        <MusicGenerator />
+        <JamifyMusicGenerator />
         
         {playerState.currentTrack && playerState.isGeneratedTrack && (
           <MusicPlayer />
@@ -53,10 +53,8 @@ export default function Home() {
       <div className="mb-12">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold">Recommended For You</h2>
-          <Link href="/recommendations">
-            <a className="text-[#1DB954] text-sm font-medium hover:underline">
-              View All
-            </a>
+          <Link href="/recommendations" className="text-[#1DB954] text-sm font-medium hover:underline">
+            View All
           </Link>
         </div>
         

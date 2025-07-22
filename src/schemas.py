@@ -27,6 +27,7 @@ class AudioFeatures(BaseModel):
     speechiness: float
     liveness: float
 
+# remove this and stiore user data in redis for 5 for all end points and only user id  to idenify user 
 class MirrorInput(BaseModel):
     tracks: List[AudioFeatures]
 

@@ -1,8 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { connectRedis } from "./redis";
+import path from "path";
 
 const app = express();
+
+// Initialize Redis connection (disabled until Redis service is available)
+// connectRedis().catch(console.error);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -39,6 +45,21 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Serve MP3 files from root directory
+  app.get('/*.mp3', (req, res) => {
+    const fileName = decodeURIComponent(req.path.substring(1));
+    const filePath = path.resolve('.', fileName);
+    
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('Accept-Ranges', 'bytes');
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error('Error serving audio file:', err);
+        res.status(404).send('Audio file not found');
+      }
+    });
+  });
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -59,8 +80,7 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on port 5000
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
-
+  const port = 8081; // TODO fix this for prod 
   server.listen({
     port,
     host: "0.0.0.0",

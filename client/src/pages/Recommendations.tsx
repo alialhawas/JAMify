@@ -13,8 +13,14 @@ export default function Recommendations() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("spotify");
   
-  const { data: recommendations, isLoading } = useQuery({
-    queryKey: ["/api/recommendations"],
+  const { data: recommendations, isLoading, error } = useQuery({
+    queryKey: ["/api/recommendations", accessToken],
+    queryFn: async () => {
+      console.log("Fetching recommendations from backend with token:", accessToken);
+      const result = await getRecommendations(accessToken!);
+      console.log("Recommendations API Response:", result);
+      return result;
+    },
     enabled: isAuthenticated && !!accessToken,
   });
   
@@ -50,6 +56,22 @@ export default function Recommendations() {
   // Spotify recommendations content
   const spotifyRecommendationsContent = (
     <div className="mt-4">
+      {/* Debug Info */}
+      {error && (
+        <div className="bg-red-500/20 border border-red-500 p-4 rounded-md mb-6">
+          <p className="text-red-400">API Error: {error.message}</p>
+        </div>
+      )}
+      
+      {/* API Response Debug */}
+      {recommendations && (
+        <div className="bg-blue-500/20 border border-blue-500 p-4 rounded-md mb-6">
+          <p className="text-blue-400">API Response received:</p>
+          <pre className="text-sm text-blue-300 mt-2 overflow-x-auto">
+            {JSON.stringify(recommendations, null, 2)}
+          </pre>
+        </div>
+      )}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (

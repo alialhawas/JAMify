@@ -11,6 +11,9 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || "";
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || "";
 const REDIRECT_URI = process.env.REDIRECT_URI || "http://localhost:5000/api/auth/callback";
 
+// if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+//   console.error("Missing Spotify credentials. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.");
+// }
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // SPOTIFY AUTH ROUTES
@@ -182,6 +185,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // CHECK DATA FRESHNESS
+  app.get("/api/check-data-freshness", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const token = authHeader.split(" ")[1];
+    
+    try {
+      // Get user profile to identify the user
+      const profileResponse = await axios.get("https://api.spotify.com/v1/me", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      const spotifyId = profileResponse.data.id;
+      
+      // Find user by Spotify ID
+      const user = await storage.getUserBySpotifyId(spotifyId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if data needs refresh (default 3 days)
+      const shouldRefresh = await storage.shouldRefreshUserData(user.id, 3);
+      
+      res.json({ 
+        shouldRefresh,
+        lastFetchDate: user.lastDataFetch
+      });
+    } catch (error) {
+      console.error("Error checking data freshness:", error);
+      res.status(500).json({ message: "Failed to check data freshness" });
+    }
+  });
+
   // USER STATS
   app.get("/api/stats", async (req, res) => {
     const authHeader = req.headers.authorization;
@@ -256,11 +297,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         intense: Math.random() * 0.8 + 0.2
       };
       
+      // Get user by Spotify ID to update their last data fetch time
+      const meResponse = await axios.get("https://api.spotify.com/v1/me", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      const spotifyId = meResponse.data.id;
+      const user = await storage.getUserBySpotifyId(spotifyId);
+      
+      if (user) {
+        // Update the user's last data fetch time
+        await storage.updateUserDataFetchTime(user.id);
+        
+        // Save the stats to the database
+        await storage.saveUserStats({
+          userId: user.id,
+          topGenres,
+          topArtists,
+          listeningActivity,
+          moodAnalysis
+        });
+      }
+      
+      // Return the structured user stats with the fetched timestamp
       res.json({
         topGenres,
         topArtists,
         listeningActivity,
-        moodAnalysis
+        moodAnalysis,
+        lastFetchDate: new Date()
       });
       
     } catch (error) {
@@ -280,6 +345,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const token = authHeader.split(" ")[1];
     
     try {
+      // Get user by Spotify ID to check cache freshness
+      const meResponse = await axios.get("https://api.spotify.com/v1/me", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      const spotifyId = meResponse.data.id;
+      const user = await storage.getUserBySpotifyId(spotifyId);
+      
+      if (user) {
+        // Check if we have cached recommendations and if the data is fresh
+        const shouldRefresh = await storage.shouldRefreshUserData(user.id, 3);
+        const cachedRecommendations = await storage.getUserRecommendations(user.id);
+        
+        if (!shouldRefresh && cachedRecommendations && cachedRecommendations.tracks) {
+          console.log("Using cached recommendations from", cachedRecommendations.createdAt);
+          return res.json(cachedRecommendations.tracks);
+        }
+      }
+      
       // Get user's top tracks
       const topTracksResponse = await axios.get("https://api.spotify.com/v1/me/top/tracks", {
         headers: { "Authorization": `Bearer ${token}` },
@@ -306,6 +390,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         artist: track.artists[0].name,
         imageUrl: track.album.images[0]?.url
       }));
+      
+      // If we have a user, update their last data fetch time and store recommendations
+      if (user) {
+        // Update the user's last data fetch time
+        await storage.updateUserDataFetchTime(user.id);
+        
+        // Save the recommendations to the database
+        await storage.saveUserRecommendations({
+          userId: user.id,
+          tracks: recommendations
+        });
+      }
       
       res.json(recommendations);
       
@@ -444,40 +540,173 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid seed songs" });
       }
       
-      // Since we're using a sample dataset and Node.js doesn't allow 'require' in ES modules,
-      // let's provide sample recommendations for now
+      // We'll use the Python recommendation engine in a real implementation
+      // For now, we'll simulate recommendations with predefined data
       
-      // Recommendations based on audio similarity
-      const sampleRecommendations = [
-        {
-          "name": "Uptown Funk",
-          "year": 2014,
-          "artists": ["Mark Ronson", "Bruno Mars"]
-        },
-        {
-          "name": "Despacito",
-          "year": 2017,
-          "artists": ["Luis Fonsi", "Daddy Yankee"]
-        },
-        {
-          "name": "Africa",
-          "year": 1982,
-          "artists": ["Toto"]
-        },
-        {
-          "name": "Take on Me",
-          "year": 1984,
-          "artists": ["a-ha"]
-        },
-        {
-          "name": "Dancing Queen",
-          "year": 1976,
-          "artists": ["ABBA"]
+      // Enhance recommendation data with more metadata
+      const getRecommendations = (seedSong: { name: string; year: number }) => {
+        // Simulate different recommendations based on the decade
+        const decade = Math.floor(seedSong.year / 10) * 10;
+        
+        let recommendations = [];
+        
+        if (decade >= 2010) {
+          // Modern music recommendations
+          recommendations = [
+            {
+              "name": "Blinding Lights",
+              "year": 2020,
+              "artists": ["The Weeknd"],
+              "genres": ["pop", "r&b", "synthwave"],
+              "popularity": 95,
+              "energy": 0.73,
+              "danceability": 0.799
+            },
+            {
+              "name": "Dance Monkey",
+              "year": 2019,
+              "artists": ["Tones and I"],
+              "genres": ["pop", "dance"],
+              "popularity": 92,
+              "energy": 0.588,
+              "danceability": 0.824
+            },
+            {
+              "name": "Watermelon Sugar",
+              "year": 2020,
+              "artists": ["Harry Styles"],
+              "genres": ["pop", "rock"],
+              "popularity": 91,
+              "energy": 0.548,
+              "danceability": 0.548
+            },
+            {
+              "name": "Don't Start Now",
+              "year": 2019,
+              "artists": ["Dua Lipa"],
+              "genres": ["pop", "dance"],
+              "popularity": 90,
+              "energy": 0.793,
+              "danceability": 0.794
+            },
+            {
+              "name": "Bad Guy",
+              "year": 2019,
+              "artists": ["Billie Eilish"],
+              "genres": ["pop", "alternative"],
+              "popularity": 89,
+              "energy": 0.425,
+              "danceability": 0.701
+            }
+          ];
+        } else if (decade >= 2000) {
+          // 2000s recommendations
+          recommendations = [
+            {
+              "name": "Uptown Funk",
+              "year": 2014,
+              "artists": ["Mark Ronson", "Bruno Mars"],
+              "genres": ["pop", "funk", "disco"],
+              "popularity": 87,
+              "energy": 0.929,
+              "danceability": 0.859
+            },
+            {
+              "name": "Rolling in the Deep",
+              "year": 2011,
+              "artists": ["Adele"],
+              "genres": ["pop", "soul"],
+              "popularity": 85,
+              "energy": 0.73,
+              "danceability": 0.75
+            },
+            {
+              "name": "Toxic",
+              "year": 2003,
+              "artists": ["Britney Spears"],
+              "genres": ["pop", "dance"],
+              "popularity": 83,
+              "energy": 0.76,
+              "danceability": 0.805
+            },
+            {
+              "name": "Hey Ya!",
+              "year": 2003,
+              "artists": ["OutKast"],
+              "genres": ["hip hop", "funk"],
+              "popularity": 84,
+              "energy": 0.698,
+              "danceability": 0.824
+            },
+            {
+              "name": "Mr. Brightside",
+              "year": 2004,
+              "artists": ["The Killers"],
+              "genres": ["rock", "alternative"],
+              "popularity": 82,
+              "energy": 0.91,
+              "danceability": 0.666
+            }
+          ];
+        } else {
+          // Classics recommendations
+          recommendations = [
+            {
+              "name": "Bohemian Rhapsody",
+              "year": 1975,
+              "artists": ["Queen"],
+              "genres": ["rock", "progressive rock"],
+              "popularity": 89,
+              "energy": 0.402,
+              "danceability": 0.389
+            },
+            {
+              "name": "Billie Jean",
+              "year": 1982,
+              "artists": ["Michael Jackson"],
+              "genres": ["pop", "disco", "dance"],
+              "popularity": 88,
+              "energy": 0.769,
+              "danceability": 0.736
+            },
+            {
+              "name": "Sweet Child O' Mine",
+              "year": 1987,
+              "artists": ["Guns N' Roses"],
+              "genres": ["rock", "hard rock"],
+              "popularity": 87,
+              "energy": 0.812,
+              "danceability": 0.435
+            },
+            {
+              "name": "Africa",
+              "year": 1982,
+              "artists": ["Toto"],
+              "genres": ["pop rock", "soft rock"],
+              "popularity": 84,
+              "energy": 0.698,
+              "danceability": 0.680
+            },
+            {
+              "name": "Take on Me",
+              "year": 1984,
+              "artists": ["a-ha"],
+              "genres": ["synthpop", "new wave"],
+              "popularity": 85,
+              "energy": 0.814,
+              "danceability": 0.582
+            }
+          ];
         }
-      ];
+        
+        return recommendations;
+      };
+      
+      // Use the first seed song to get recommendations
+      const recommendations = getRecommendations(seedSongs[0]);
       
       // Return the recommendations
-      return res.json(sampleRecommendations);
+      return res.json(recommendations);
       
     } catch (error) {
       console.error('Recommendation error:', error);
