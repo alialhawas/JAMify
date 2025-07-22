@@ -2,8 +2,13 @@ import pandas as pd
 import requests
 import asyncio
 import httpx
+import os
+import jwt
+
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 from functools import partial
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 
@@ -18,6 +23,16 @@ from src.database.postgres.index import get_db_conn, release_db_conn, insert_top
 from src.database.redis.index import get_redis
 
 from src.song_Gen.youTfileCreateor import download_song_sample_by_name, load_clips
+
+
+from slowapi.util import get_remote_address
+from fastapi import Request
+from jwt import ExpiredSignatureError, InvalidTokenError
+
+
+JWT_SECRET =  os.getenv("JWT_SECRET") 
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
+ENV = os.getenv('ENV')
 
 data: pd.DataFrame = None
 song_cluster_pipeline: Pipeline =  Pipeline([
@@ -161,7 +176,8 @@ def user_tracks(user_id: str, time_range: str = "long_term") -> dict:
     insert_top_tracks(user_id, tracks, time_range, conn)
     release_db_conn(conn)
 
-    load_clips(tracks[:20], redis_con)
+    if ENV != "dev":
+        load_clips(tracks[:20], redis_con)
     
 
 
@@ -201,3 +217,53 @@ async def asyncget_preview(songs: list[dict]) -> list[str]:
         for song in songs
     ]
     return await asyncio.gather(*tasks)
+
+def create_jwt(user_id: str):
+    expiration = datetime.utcnow() + timedelta(hours=2)
+    payload = {
+        "user_id": user_id,
+        "exp": expiration  
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return token
+
+
+
+def get_user_id_from_jwt(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Invalid token payload")
+        return user_id
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def get_current_user(request: Request) -> str:
+    token = (
+        request.cookies.get("jwt") or  # from cookie
+        request.headers.get("Authorization", "").replace("Bearer ", "")  # or from header
+    )
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+
+    return decode_jwt(token)
+
+
+def decode_jwt(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload.get("user_id")
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def user_key_func(request: Request):
+    return request.state.user_id or get_remote_address(request)
+

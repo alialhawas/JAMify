@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSpotifyOperations } from "@/hooks/useSpotify";
-import { MusicGenerator } from "@/components/music/MusicGenerator";
+import { JamifyMusicGenerator } from "@/components/music/JamifyMusicGenerator";
 import { MusicPlayer } from "@/components/music/MusicPlayer";
 import { LoginModal } from "@/components/modals/LoginModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -18,7 +18,7 @@ export default function Generate() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Generate Music</h1>
         <p className="text-[#B3B3B3] mb-4">
-          Create unique tracks based on your preferences and Spotify data
+          Create AI-generated songs with custom lyrics and styles inspired by your taste
         </p>
         
         {!isAuthenticated && (
@@ -26,7 +26,7 @@ export default function Generate() {
             <InfoIcon className="text-[#1DB954] mr-3 mt-1 h-5 w-5" />
             <AlertTitle className="font-semibold mb-1">Connect to Spotify</AlertTitle>
             <AlertDescription className="text-[#B3B3B3] text-sm">
-              Connect your Spotify account to enhance music generation with your listening preferences.
+              Connect your Spotify account to generate songs inspired by your personal music taste.
             </AlertDescription>
           </Alert>
         )}
@@ -34,7 +34,7 @@ export default function Generate() {
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <MusicGenerator />
+          <JamifyMusicGenerator />
           
           {playerState.currentTrack && playerState.isGeneratedTrack && (
             <MusicPlayer />
@@ -52,7 +52,7 @@ export default function Generate() {
                     1
                   </div>
                   <p className="text-sm text-[#B3B3B3]">
-                    Choose a genre and mood that matches your desired musical style
+                    Write a lyric prompt describing what your song should be about
                   </p>
                 </div>
                 
@@ -61,7 +61,7 @@ export default function Generate() {
                     2
                   </div>
                   <p className="text-sm text-[#B3B3B3]">
-                    Add optional inspiration from your favorite artists
+                    Choose style reference: either describe the musical style or paste a YouTube link
                   </p>
                 </div>
                 
@@ -70,7 +70,7 @@ export default function Generate() {
                     3
                   </div>
                   <p className="text-sm text-[#B3B3B3]">
-                    Set the duration and generate your unique track
+                    Generate your AI-powered song with custom lyrics and style
                   </p>
                 </div>
                 
@@ -79,7 +79,7 @@ export default function Generate() {
                     4
                   </div>
                   <p className="text-sm text-[#B3B3B3]">
-                    Not quite right? Regenerate or create variations until it's perfect
+                    Listen to your generated song and create new versions with different prompts
                   </p>
                 </div>
               </div>

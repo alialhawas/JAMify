@@ -7,9 +7,13 @@ import {
   BarChart2Icon,
   Music2Icon,
   HeartIcon,
-  Settings2Icon
+  ClockIcon,
+  ScanFaceIcon,
+  Settings2Icon,
+  InfoIcon
 } from "lucide-react";
 import { SiSpotify } from "react-icons/si";
+import { JamifyWordmark } from "@/components/ui/jamify-logo";
 
 export function Sidebar() {
   const [location] = useLocation();
@@ -20,6 +24,9 @@ export function Sidebar() {
     { label: "Your Stats", path: "/stats", icon: <BarChart2Icon className="mr-3 text-xl" /> },
     { label: "Generate Music", path: "/generate", icon: <Music2Icon className="mr-3 text-xl" /> },
     { label: "Recommendations", path: "/recommendations", icon: <HeartIcon className="mr-3 text-xl" /> },
+    { label: "Time Machine", path: "/time-machine", icon: <ClockIcon className="mr-3 text-xl" /> },
+    { label: "Melody Mirror", path: "/melody-mirror", icon: <ScanFaceIcon className="mr-3 text-xl" /> },
+    { label: "About", path: "/about", icon: <InfoIcon className="mr-3 text-xl" /> },
     { label: "Settings", path: "/settings", icon: <Settings2Icon className="mr-3 text-xl" /> }
   ];
 
@@ -27,8 +34,7 @@ export function Sidebar() {
     <div className="bg-black md:w-64 w-full md:min-h-screen md:fixed md:left-0 md:top-0 md:bottom-0 z-10">
       <div className="p-6">
         <div className="flex items-center mb-8">
-          <SiSpotify className="text-[#1DB954] text-3xl mr-2" />
-          <h1 className="text-xl font-bold">Rhythmix</h1>
+          <JamifyWordmark size="md" />
         </div>
         
         <nav>

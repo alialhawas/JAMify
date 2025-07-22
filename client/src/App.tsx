@@ -14,17 +14,47 @@ import Home from "@/pages/Home";
 import Stats from "@/pages/Stats";
 import Generate from "@/pages/Generate";
 import Recommendations from "@/pages/Recommendations";
+import TimeMachine from "@/pages/TimeMachine";
+import MelodyMirror from "@/pages/MelodyMirror";
+import About from "@/pages/About";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
+
+import { useEffect } from "react";
+import { useLocation } from "wouter";
+
+export function CallbackHandler() {
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    fetch("http://localhost:8000/verify-jwt", {
+      method: "GET",
+      credentials: "include", // send cookies automatically
+    }).then(res => {
+      if (res.ok) {
+        setLocation("/stats"); // or wherever after successful login
+      } else {
+        setLocation("/login"); // failed login or token expired
+      }
+    });
+  }, []);
+
+  return <p>Processing login...</p>;
+}
+
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={About} />
       <Route path="/stats" component={Stats} />
       <Route path="/generate" component={Generate} />
       <Route path="/recommendations" component={Recommendations} />
+      <Route path="/time-machine" component={TimeMachine} />
+      <Route path="/melody-mirror" component={MelodyMirror} />
+      <Route path="/about" component={About} />
       <Route path="/settings" component={Settings} />
+      <Route path="/callback" component={CallbackHandler} />
       <Route component={NotFound} />
     </Switch>
   );

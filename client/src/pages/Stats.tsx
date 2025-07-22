@@ -5,6 +5,7 @@ import { ArtistItem } from "@/components/ui/artist-item";
 import { RadarChart } from "@/components/ui/radar-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserStats } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import { getUserStats } from "@/lib/spotify";
@@ -13,10 +14,54 @@ export default function Stats() {
   const { isAuthenticated, accessToken } = useSpotifyOperations();
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ["/api/stats"],
+  // Separate API calls for each data type
+  const { data: topArtists, isLoading: loadingArtists, error: artistsError } = useQuery({
+    queryKey: ["/api/top-artists", accessToken],
+    queryFn: async () => {
+      console.log("Fetching top artists from backend with token:", accessToken);
+      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/top-artists?user_id=user123`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!response.ok) throw new Error(`Top artists request failed: ${response.status}`);
+      const result = await response.json();
+      console.log("Top Artists API Response:", result);
+      return result;
+    },
     enabled: isAuthenticated && !!accessToken,
   });
+
+  const { data: topTracks, isLoading: loadingTracks, error: tracksError } = useQuery({
+    queryKey: ["/api/top-tracks", accessToken],
+    queryFn: async () => {
+      console.log("Fetching top tracks from backend with token:", accessToken);
+      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/top-tracks?user_id=user123`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!response.ok) throw new Error(`Top tracks request failed: ${response.status}`);
+      const result = await response.json();
+      console.log("Top Tracks API Response:", result);
+      return result;
+    },
+    enabled: isAuthenticated && !!accessToken,
+  });
+
+  const { data: genreCount, isLoading: loadingGenres, error: genresError } = useQuery({
+    queryKey: ["/api/genre-count", accessToken],
+    queryFn: async () => {
+      console.log("Fetching genre count from backend with token:", accessToken);
+      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/genre-count?user_id=user123`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!response.ok) throw new Error(`Genre count request failed: ${response.status}`);
+      const result = await response.json();
+      console.log("Genre Count API Response:", result);
+      return result;
+    },
+    enabled: isAuthenticated && !!accessToken,
+  });
+
+  const isLoading = loadingArtists || loadingTracks || loadingGenres;
+  const error = artistsError || tracksError || genresError;
   
   const handleLoginClick = () => {
     setLoginModalOpen(true);
@@ -25,25 +70,43 @@ export default function Stats() {
   if (!isAuthenticated) {
     return (
       <main className="p-6">
-        <h1 className="text-3xl font-bold mb-4">Your Listening Stats</h1>
-        <p className="text-[#B3B3B3] mb-6">
-          Connect with Spotify to see your personalized listening statistics.
-        </p>
-        
-        <div className="flex justify-center">
-          <div className="bg-[#282828] p-8 rounded-xl max-w-md text-center">
-            <h2 className="text-xl font-bold mb-4">Connect to Spotify</h2>
-            <p className="text-[#B3B3B3] mb-6">
-              We need access to your Spotify data to generate your listening stats and music insights.
-            </p>
-            <button
-              onClick={handleLoginClick}
-              className="bg-[#1DB954] hover:bg-[#1ED760] text-black font-medium py-3 px-6 rounded-full transition duration-300"
-            >
-              Connect Spotify Account
-            </button>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">Your Music Statistics</h1>
+          <p className="text-gray-400">
+            Discover your music taste with detailed analytics from your Spotify listening history
+          </p>
         </div>
+
+        <Tabs defaultValue="artists" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 bg-gray-800">
+            <TabsTrigger value="artists">Top Artists</TabsTrigger>
+            <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
+            <TabsTrigger value="genres">Music Taste</TabsTrigger>
+          </TabsList>
+          <TabsContent value="artists">
+          {loadingArtists && <p>Loading artists...</p>}
+          {artistsError && <p>Error loading artists: {artistsError.message}</p>}
+          {topArtists && (
+            <TopArtists artists={topArtists} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="tracks">
+          {loadingTracks && <p>Loading tracks...</p>}
+          {tracksError && <p>Error loading tracks: {tracksError.message}</p>}
+          {topTracks && (
+            <TopTracks tracks={topTracks} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="genres">
+          {loadingGenres && <p>Loading genres...</p>}
+          {genresError && <p>Error loading genres: {genresError.message}</p>}
+          {genreCount && (
+            <TopGenres genres={genreCount} />
+          )}
+        </TabsContent>
+        </Tabs>
         
         <LoginModal 
           isOpen={loginModalOpen} 
@@ -57,6 +120,43 @@ export default function Stats() {
     <main className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Your Listening Stats</h1>
+      </div>
+      
+      {/* Debug Info */}
+      {error && (
+        <div className="bg-red-500/20 border border-red-500 p-4 rounded-md mb-6">
+          <p className="text-red-400">API Error: {error.message}</p>
+        </div>
+      )}
+      
+      {/* API Response Debug */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {topArtists && (
+          <div className="bg-blue-500/20 border border-blue-500 p-4 rounded-md">
+            <p className="text-blue-400">Top Artists API Response:</p>
+            <pre className="text-sm text-blue-300 mt-2 overflow-x-auto">
+              {JSON.stringify(topArtists, null, 2)}
+            </pre>
+          </div>
+        )}
+        
+        {topTracks && (
+          <div className="bg-green-500/20 border border-green-500 p-4 rounded-md">
+            <p className="text-green-400">Top Tracks API Response:</p>
+            <pre className="text-sm text-green-300 mt-2 overflow-x-auto">
+              {JSON.stringify(topTracks, null, 2)}
+            </pre>
+          </div>
+        )}
+        
+        {genreCount && (
+          <div className="bg-purple-500/20 border border-purple-500 p-4 rounded-md">
+            <p className="text-purple-400">Genre Count API Response:</p>
+            <pre className="text-sm text-purple-300 mt-2 overflow-x-auto">
+              {JSON.stringify(genreCount, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -78,20 +178,19 @@ export default function Stats() {
                   </div>
                 ))}
               </div>
-            ) : stats?.topGenres ? (
+            ) : genreCount && Array.isArray(genreCount) && genreCount.length > 0 ? (
               <div className="space-y-4">
-                {stats.topGenres.map((genre) => (
-                  <div key={genre.name}>
+                {genreCount.map((genre, index) => (
+                  <div key={genre.genre || index}>
                     <div className="flex justify-between mb-1">
-                      <span className="text-sm">{genre.name}</span>
-                      <span className="text-sm text-[#B3B3B3]">{genre.percentage}%</span>
+                      <span className="text-sm">{genre.genre || 'Unknown Genre'}</span>
+                      <span className="text-sm text-[#B3B3B3]">{genre.count || 0}</span>
                     </div>
                     <div className="h-2 bg-[#121212] rounded-full">
                       <div 
-                        className="h-full rounded-full" 
+                        className="h-full rounded-full bg-green-500" 
                         style={{ 
-                          width: `${genre.percentage}%`,
-                          backgroundColor: genre.color
+                          width: `${Math.min(100, (genre.count || 0) * 10)}%`
                         }}
                       ></div>
                     </div>
@@ -144,15 +243,30 @@ export default function Stats() {
                   </div>
                 ))}
               </div>
-            ) : stats?.topArtists ? (
+            ) : topArtists && Array.isArray(topArtists) && topArtists.length > 0 ? (
               <div className="space-y-3">
-                {stats.topArtists.map((artist) => (
-                  <ArtistItem
-                    key={artist.id}
-                    name={artist.name}
-                    imageUrl={artist.imageUrl}
-                    playCount={artist.playCount}
-                  />
+                {topArtists.slice(0, 5).map((artist, index) => (
+                  <div key={artist.id || index} className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-gray-600 mr-3 flex items-center justify-center">
+                      {artist.images && artist.images.length > 0 ? (
+                        <img 
+                          src={artist.images[0].url} 
+                          alt={artist.name} 
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs">🎵</span>
+                      )}
+                    </div>
+                    <div className="flex-grow">
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium">{artist.name}</span>
+                        <span className="text-sm text-[#B3B3B3]">
+                          {artist.popularity || 0}% popularity
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -161,72 +275,74 @@ export default function Stats() {
           </CardContent>
         </Card>
         
-        {/* Listening Activity */}
+        {/* Top Tracks */}
         <Card className="bg-[#282828] border-none">
           <CardHeader className="pb-2">
-            <CardTitle className="font-semibold text-lg">Listening Activity</CardTitle>
+            <CardTitle className="font-semibold text-lg">Top Tracks</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex items-center">
+                    <Skeleton className="w-12 h-12 rounded mr-3" />
+                    <div className="flex-grow">
+                      <Skeleton className="h-4 w-32 mb-1" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : topTracks && Array.isArray(topTracks) && topTracks.length > 0 ? (
+              <div className="space-y-3">
+                {topTracks.slice(0, 5).map((track, index) => (
+                  <div key={track.id || index} className="flex items-center">
+                    <div className="w-12 h-12 rounded bg-gray-600 mr-3 flex items-center justify-center">
+                      {track.album?.images && track.album.images.length > 0 ? (
+                        <img 
+                          src={track.album.images[0].url} 
+                          alt={track.album.name} 
+                          className="w-12 h-12 rounded object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs">🎵</span>
+                      )}
+                    </div>
+                    <div className="flex-grow">
+                      <div className="text-sm font-medium">{track.name}</div>
+                      <div className="text-xs text-[#B3B3B3]">
+                        {track.artists?.map(artist => artist.name).join(', ')}
+                      </div>
+                      <div className="text-xs text-[#B3B3B3]">
+                        Popularity: {track.popularity || 0}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[#B3B3B3]">No track data available</p>
+            )}
+          </CardContent>
+        </Card>
+        
+        {/* Music Taste Analysis */}
+        <Card className="bg-[#282828] border-none">
+          <CardHeader className="pb-2">
+            <CardTitle className="font-semibold text-lg">Music Taste Analysis</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-48 w-full" />
-            ) : stats?.listeningActivity ? (
-              <div className="h-48">
-                <svg viewBox="0 0 300 100" className="w-full h-full">
-                  {/* Chart grid */}
-                  <line x1="0" y1="0" x2="300" y2="0" stroke="#333" strokeWidth="1" />
-                  <line x1="0" y1="25" x2="300" y2="25" stroke="#333" strokeWidth="1" />
-                  <line x1="0" y1="50" x2="300" y2="50" stroke="#333" strokeWidth="1" />
-                  <line x1="0" y1="75" x2="300" y2="75" stroke="#333" strokeWidth="1" />
-                  <line x1="0" y1="100" x2="300" y2="100" stroke="#333" strokeWidth="1" />
-                  
-                  {/* Chart data */}
-                  <path 
-                    d={`M${stats.listeningActivity.map((item, i) => {
-                      const x = (i / (stats.listeningActivity.length - 1)) * 300;
-                      const y = 100 - (item.count / 100) * 100;
-                      return `${i === 0 ? 'M' : 'L'}${x},${y}`;
-                    }).join(' ')}`} 
-                    fill="none" 
-                    stroke="#1DB954" 
-                    strokeWidth="2" 
-                  />
-                  
-                  <path 
-                    d={`M0,${100 - (stats.listeningActivity[0].count / 100) * 100} ${stats.listeningActivity.map((item, i) => {
-                      const x = (i / (stats.listeningActivity.length - 1)) * 300;
-                      const y = 100 - (item.count / 100) * 100;
-                      return `L${x},${y}`;
-                    }).join(' ')} L300,100 L0,100 Z`} 
-                    fill="url(#gradient)" 
-                    stroke="none" 
-                    opacity="0.3" 
-                  />
-                  
-                  {/* Gradient definition */}
-                  <defs>
-                    <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#1DB954" />
-                      <stop offset="100%" stopColor="#1DB954" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  
-                  {/* X-axis labels */}
-                  {stats.listeningActivity.map((item, i) => (
-                    <text 
-                      key={i}
-                      x={(i / (stats.listeningActivity.length - 1)) * 300} 
-                      y="115" 
-                      fill="#B3B3B3" 
-                      fontSize="8" 
-                      textAnchor="middle"
-                    >
-                      {item.day}
-                    </text>
-                  ))}
-                </svg>
+            ) : genreCount ? (
+              <div className="text-center">
+                <p className="text-[#B3B3B3]">Genre analysis based on your listening habits</p>
+                <div className="mt-4 text-sm">
+                  <p>Total genres in your library: {Array.isArray(genreCount) ? genreCount.length : 0}</p>
+                </div>
               </div>
             ) : (
-              <p className="text-[#B3B3B3]">No activity data available</p>
+              <p className="text-[#B3B3B3]">No music taste data available</p>
             )}
           </CardContent>
         </Card>
