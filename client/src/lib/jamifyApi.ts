@@ -1,6 +1,6 @@
 // JAMIFY API Client for localhost:8000 endpoints
 
-const JAMIFY_API_BASE = "https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000";
+const JAMIFY_API_BASE = "localhost:8000";
 
 export interface JamifySong {
   name: string;

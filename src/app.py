@@ -490,8 +490,60 @@ async def verify_jwt(request: Request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-@app.get('get-grane')
-def get
+
+@app.get("/top-genres")
+def get_top_genres_mock(
+    request: Request,
+    period: str = Query(..., pattern="^(short_term|medium_term|long_term)$")
+):
+    # Mock genre data based on period
+    mock_data = {
+        "short_term": {
+            "pop": 20,
+            "rock": 10,
+            "hip-hop": 5,
+            "indie": 3,
+        },
+        "medium_term": {
+            "pop": 35,
+            "rock": 20,
+            "hip-hop": 10,
+            "indie": 6,
+            "electronic": 4,
+        },
+        "long_term": {
+            "pop": 42,
+            "rock": 25,
+            "hip-hop": 18,
+            "indie": 10,
+            "electronic": 7,
+            "jazz": 5,
+        },
+    }
+
+    return JSONResponse(content={"top-genres": mock_data[period]})
+
+
+
+@app.get("/profile")
+def get_spotify_profile(request: Request):
+
+
+    token = request.cookies.get("jwt")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
+
+    user_id = get_user_id_from_jwt(token) 
+
+    
+    resp = requests.get("https://api.spotify.com/v1/me", headers=headers)
+    data = resp.json()
+    
+    return {
+        "display_name": data.get("display_name"),
+        "avatar_url": data.get("images", [{}])[0].get("url", "")
+    }
 
 @app.on_event("shutdown")
 def shutdown():

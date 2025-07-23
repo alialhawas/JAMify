@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useSpotifyOperations } from "@/hooks/useSpotify";
 import { LoginModal } from "@/components/modals/LoginModal";
 import { ArtistItem } from "@/components/ui/artist-item";
@@ -10,7 +9,15 @@ import { UserStats } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import { getUserStats } from "@/lib/spotify";
 
+import React, { useState, useEffect } from "react";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+
 export default function Stats() {
+
+  const [period, setPeriod] = useState("long_term");
+
   const { isAuthenticated, accessToken } = useSpotifyOperations();
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   
@@ -19,45 +26,45 @@ export default function Stats() {
     queryKey: ["/api/top-artists", accessToken],
     queryFn: async () => {
       console.log("Fetching top artists from backend with token:", accessToken);
-      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/top-artists?user_id=user123`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      const response = await fetch(`${BACKEND_URL}/top-artists?period=${period}`, {
+        credentials: "include", // <== Important for sending cookies!
       });
       if (!response.ok) throw new Error(`Top artists request failed: ${response.status}`);
       const result = await response.json();
       console.log("Top Artists API Response:", result);
       return result;
     },
-    enabled: isAuthenticated && !!accessToken,
+    enabled: isAuthenticated,
   });
 
   const { data: topTracks, isLoading: loadingTracks, error: tracksError } = useQuery({
     queryKey: ["/api/top-tracks", accessToken],
     queryFn: async () => {
       console.log("Fetching top tracks from backend with token:", accessToken);
-      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/top-tracks?user_id=user123`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      const response = await fetch(`${BACKEND_URL}/top-tracks?period=${period}`, {
+        credentials: "include", // <== Important for sending cookies!
       });
       if (!response.ok) throw new Error(`Top tracks request failed: ${response.status}`);
       const result = await response.json();
       console.log("Top Tracks API Response:", result);
       return result;
     },
-    enabled: isAuthenticated && !!accessToken,
+    enabled: isAuthenticated,
   });
 
   const { data: genreCount, isLoading: loadingGenres, error: genresError } = useQuery({
     queryKey: ["/api/genre-count", accessToken],
     queryFn: async () => {
       console.log("Fetching genre count from backend with token:", accessToken);
-      const response = await fetch(`https://1d1a4873-308d-439a-a5df-124dd6f9e6ce-00-123kw0oztqvdu.picard.replit.dev:8000/genre-count?user_id=user123`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      const response = await fetch(`${BACKEND_URL}/top-genres?period=${period}`, {
+        credentials: "include", // <== Important for sending cookies!
       });
       if (!response.ok) throw new Error(`Genre count request failed: ${response.status}`);
       const result = await response.json();
       console.log("Genre Count API Response:", result);
       return result;
     },
-    enabled: isAuthenticated && !!accessToken,
+    enabled: isAuthenticated,
   });
 
   const isLoading = loadingArtists || loadingTracks || loadingGenres;
@@ -350,3 +357,122 @@ export default function Stats() {
     </main>
   );
 }
+
+
+// import React, { useEffect, useState } from "react";
+
+// const timeRanges = [
+//   { label: "Last 4 weeks", value: "short_term" },
+//   { label: "Last 6 months", value: "medium_term" },
+//   { label: "All time", value: "long_term" },
+// ];
+
+// export default function Stats() {
+//   const [period, setPeriod] = useState("short_term");
+//   const [topArtists, setTopArtists] = useState([]);
+//   const [topTracks, setTopTracks] = useState([]);
+//   const [topGenres, setTopGenres] = useState([]);
+//   const [loading, setLoading] = useState(false);
+
+//   useEffect(() => {
+//     fetchData();
+//   }, [period]);
+
+//   const fetchData = async () => {
+//     setLoading(true);
+//     try {
+//       const [artistsRes, tracksRes, genresRes] = await Promise.all([
+//         fetch(`http://localhost:8000/top-artists?period=${period}`, {
+//           credentials: "include", 
+//         }),
+//         fetch(`http://localhost:8000/top-tracks?period=${period}`, {
+//           credentials: "include",
+//         }),
+//         fetch(`http://localhost:8000/top-genres?period=${period}`, {
+//           credentials: "include",
+//         }),
+//       ]);
+
+//       const [artistsJson, tracksJson, genresJson] = await Promise.all([
+//         artistsRes.json(),
+//         tracksRes.json(),
+//         genresRes.json(),
+//       ]);
+
+//       setTopArtists(artistsJson["top-artiest"] || []);
+//       setTopTracks(tracksJson["top-tracks"] || []);
+//       setTopGenres(genresJson["top-genres"] || []);
+//     } catch (err) {
+//       console.error("Failed to fetch stats:", err);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   return (
+//     <div className="p-6 max-w-5xl mx-auto">
+//       <h1 className="text-3xl font-bold mb-4">Your Spotify Stats</h1>
+
+//       <div className="mb-6">
+//         <label className="mr-2 font-medium">Time range:</label>
+//         <select
+//           value={period}
+//           onChange={(e) => setPeriod(e.target.value)}
+//           className="border rounded px-2 py-1"
+//         >
+//           {timeRanges.map((t) => (
+//             <option key={t.value} value={t.value}>
+//               {t.label}
+//             </option>
+//           ))}
+//         </select>
+//       </div>
+
+//       {loading ? (
+//         <p>Loading...</p>
+//       ) : (
+//         <>
+//           {/* Top Artists */}
+//           <section className="mb-10">
+//             <h2 className="text-2xl font-semibold mb-2">Top Artists</h2>
+//             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+//               {topArtists.map((artist, i) => (
+//                 <div key={i} className="p-3 border rounded shadow">
+//                   <img src={artist.image} alt={artist.name} className="w-full rounded mb-2" />
+//                   <p className="font-medium">{artist.name}</p>
+//                   <p className="text-sm text-gray-500">Rank #{artist.rank}</p>
+//                 </div>
+//               ))}
+//             </div>
+//           </section>
+
+//           {/* Top Tracks */}
+//           <section className="mb-10">
+//             <h2 className="text-2xl font-semibold mb-2">Top Tracks</h2>
+//             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+//               {topTracks.map((track, i) => (
+//                 <div key={i} className="p-3 border rounded shadow">
+//                   <img src={track.image1 || track.image2 || track.image3} alt={track.song_name} className="w-full rounded mb-2" />
+//                   <p className="font-medium">{track.song_name}</p>
+//                   <p className="text-sm text-gray-500">{track.artist_name}</p>
+//                 </div>
+//               ))}
+//             </div>
+//           </section>
+
+//           {/* Top Genres */}
+//           <section>
+//             <h2 className="text-2xl font-semibold mb-2">Top Genres</h2>
+//             <ul className="list-disc ml-6">
+//               {topGenres.map((genre, i) => (
+//                 <li key={i}>
+//                   {genre.name}: {genre.count}
+//                 </li>
+//               ))}
+//             </ul>
+//           </section>
+//         </>
+//       )}
+//     </div>
+//   );
+// }
