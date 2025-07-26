@@ -3,6 +3,8 @@ import time
 import asyncio
 from urllib.parse import urlencode
 from typing import List, Dict
+import requests
+
 
 import pandas as pd
 import numpy as np
@@ -284,16 +286,16 @@ async def callback(request: Request, code: str):
 
     redis_con = get_redis()  # TODO use aioredis later
 
-    redis_con.set(f"spotify:{user_id}:access_token", access_token, ex=expires_in)
-    redis_con.set(f"spotify:{user_id}:refresh_token", refresh_token)
-    redis_con.set(f"spotify:{user_id}:expires_at", int(time.time()) + expires_in - 10, ex=expires_in)
 
-
-    redis_con.hmset(f"spotify:{user_id}:tokens", {
-    "access_token": access_token,
-    "refresh_token": refresh_token,
-    "expires_at": expires_in
+    expires_at = int(time.time()) + expires_in - 10
+    
+    redis_con.hset(f"spotify:{user_id}:tokens", mapping={
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at
     })
+
+    redis_con.expire(f"spotify:{user_id}:tokens", expires_in)
 
 
     """ To make it as backgroup task (fire and forget) createed new procesing for
@@ -491,6 +493,10 @@ async def verify_jwt(request: Request):
 
 
 
+from fastapi import Request, Query
+from fastapi.responses import JSONResponse
+from typing import Dict
+
 @app.get("/top-genres")
 def get_top_genres_mock(
     request: Request,
@@ -521,14 +527,40 @@ def get_top_genres_mock(
         },
     }
 
-    return JSONResponse(content={"top-genres": mock_data[period]})
+    genre_counts = mock_data.get(period, {})
+    
+    total = sum(genre_counts.values())
 
+    if total == 0:
+        return JSONResponse({"message": "No genre data available"}, status_code=404)
+
+    # Compute percentages
+    genre_percentages = {
+        genre: round((count / total) * 100, 2)
+        for genre, count in genre_counts.items()
+    }
+
+    # Sort genres by percentage
+    sorted_genres = sorted(genre_percentages.items(), key=lambda x: x[1], reverse=True)
+
+    # Build summary
+    top_genre, top_pct = sorted_genres[0]
+    summary = f"Your top genre is {top_genre.title()} at {int(top_pct)}%, showing your main music taste."
+
+    if len(sorted_genres) > 1:
+        others = sorted_genres[1:3]  # Next top 2
+        other_summary = " and ".join([f"{g.title()} ({int(p)}%)" for g, p in others])
+        summary += f" The strong presence of {other_summary} adds variety to your preferences."
+
+    return {
+        "genre_percentages": genre_percentages,
+        "summary": summary,
+        "top_genres": sorted_genres[:5],
+    }
 
 
 @app.get("/profile")
 def get_spotify_profile(request: Request):
-
-
     token = request.cookies.get("jwt")
 
     if not token:
@@ -536,14 +568,32 @@ def get_spotify_profile(request: Request):
 
     user_id = get_user_id_from_jwt(token) 
 
+    redis_con = get_redis()
+
+    token_data = redis_con.hgetall(f"spotify:{user_id}:tokens")
+
+    if not token_data:
+        raise HTTPException(status_code=401, detail="Spotify token not found in Redis")
+
+    access_token = token_data['access_token']
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
     
     resp = requests.get("https://api.spotify.com/v1/me", headers=headers)
     data = resp.json()
-    
+
+    images = data.get("images", [])
+    has_avatar = len(images) > 0
+    avatar_url = images[0]["url"] if has_avatar else ""
+
     return {
         "display_name": data.get("display_name"),
-        "avatar_url": data.get("images", [{}])[0].get("url", "")
+        "avatar_url": avatar_url,
+        "has_avatar": has_avatar
     }
+
 
 @app.on_event("shutdown")
 def shutdown():

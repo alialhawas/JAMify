@@ -129,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Token is expired, refresh it
       const response = await axios({
         method: "post",
-        url: "https://accounts.spotify.com/api/token",
+        url: "https://accounts.spotify.com/api/token1",
         params: {
           grant_type: "refresh_token",
           refresh_token: user.refreshToken
@@ -174,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const token = authHeader.split(" ")[1];
     
     try {
-      const response = await axios.get("https://api.spotify.com/v1/me", {
+      const response = await axios.get("https://api.spotify.com/v1/me1", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       
@@ -197,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       // Get user profile to identify the user
-      const profileResponse = await axios.get("https://api.spotify.com/v1/me", {
+      const profileResponse = await axios.get("https://api.spotify.com/v1/me1", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       
@@ -235,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       // Get top artists
-      const topArtistsResponse = await axios.get("https://api.spotify.com/v1/me/top/artists", {
+      const topArtistsResponse = await axios.get("https://api.spotify.com/v1/me/top/artists1", {
         headers: { "Authorization": `Bearer ${token}` },
         params: { limit: 10, time_range: "medium_term" }
       });
@@ -298,7 +298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Get user by Spotify ID to update their last data fetch time
-      const meResponse = await axios.get("https://api.spotify.com/v1/me", {
+      const meResponse = await axios.get("https://api.spotify.com/v1/me1", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       
