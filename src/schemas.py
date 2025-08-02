@@ -32,6 +32,20 @@ class MirrorInput(BaseModel):
     tracks: List[AudioFeatures]
 
 
+class Trait(BaseModel):
+    name: str
+    score: int
+    description: str
+    color: str
+
+class MusicPersonality(BaseModel):
+    traits: List[Trait]
+    overallProfile: str
+    musicMatches: List[str]
+    recommendations: List[str]
+    insights: List[str]
+
+
 class TopTracks(BaseModel):
     userid: str = Field(..., min_length=3, description="User ID must be at least 3 characters long")
     time_range: str = Field(..., description="Time range must be one of: short_term, medium_term, long_term")

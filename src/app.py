@@ -5,6 +5,9 @@ from urllib.parse import urlencode
 from typing import List, Dict
 import requests
 
+from fastapi import Request, Query
+from fastapi.responses import JSONResponse
+from typing import Dict
 
 import pandas as pd
 import numpy as np
@@ -37,8 +40,7 @@ from src.utils import (
 )
 
 
-
-from src.schemas import SongList, GenSongInput, MirrorInput
+from src.schemas import SongList, GenSongInput, MirrorInput, MusicPersonality
 
 from src.song_Gen.murka import generate_song, upload_file_to_mureka
 from src.song_Gen.youTfileCreateor import download_song_sample
@@ -492,17 +494,11 @@ async def verify_jwt(request: Request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-
-from fastapi import Request, Query
-from fastapi.responses import JSONResponse
-from typing import Dict
-
 @app.get("/top-genres")
 def get_top_genres_mock(
     request: Request,
     period: str = Query(..., pattern="^(short_term|medium_term|long_term)$")
 ):
-    # Mock genre data based on period
     mock_data = {
         "short_term": {
             "pop": 20,
@@ -528,22 +524,19 @@ def get_top_genres_mock(
     }
 
     genre_counts = mock_data.get(period, {})
-    
+
     total = sum(genre_counts.values())
 
     if total == 0:
         return JSONResponse({"message": "No genre data available"}, status_code=404)
 
-    # Compute percentages
     genre_percentages = {
         genre: round((count / total) * 100, 2)
         for genre, count in genre_counts.items()
     }
 
-    # Sort genres by percentage
     sorted_genres = sorted(genre_percentages.items(), key=lambda x: x[1], reverse=True)
 
-    # Build summary
     top_genre, top_pct = sorted_genres[0]
     summary = f"Your top genre is {top_genre.title()} at {int(top_pct)}%, showing your main music taste."
 
@@ -593,6 +586,96 @@ def get_spotify_profile(request: Request):
         "avatar_url": avatar_url,
         "has_avatar": has_avatar
     }
+
+
+
+@app.get("/mirror-melody/personality", response_model=MusicPersonality)
+def get_music_personality(request: Request):
+    token = request.cookies.get("jwt")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
+
+    user_id = get_user_id_from_jwt(token)
+     
+    return generate_music_personality(user_id)
+
+
+# def get_spotify_profile(request: Request):
+#     token = request.cookies.get("jwt")
+
+#     if not token:
+#         raise HTTPException(status_code=401, detail="No token provided")
+
+#     user_id = get_user_id_from_jwt(token) 
+#     return generate_music_personality(user_id)
+
+
+def analyze_music_personality(top_tracks, top_artists, top_genres, features) -> MusicPersonality:
+    avg_danceability = sum([t["danceability"] for t in features]) / len(features)
+    avg_valence = sum([t["valence"] for t in features]) / len(features)
+    genre_names = [g.lower() for g in top_genres]
+
+    traits = []
+
+    if "indie" in genre_names or avg_valence > 0.6:
+        traits.append({
+            "name": "Musical Adventurer",
+            "score": int(avg_valence * 100),
+            "description": "You love discovering new artists and exploring different genres.",
+            "color": "#FF6B6B"
+        })
+
+    if avg_valence < 0.5:
+        traits.append({
+            "name": "Emotional Connector",
+            "score": int((1 - avg_valence) * 100),
+            "description": "You connect deeply with emotional music.",
+            "color": "#4ECDC4"
+        })
+
+    if "pop" in genre_names:
+        traits.append({
+            "name": "Trend Awareness",
+            "score": 78,
+            "description": "You stay current with popular music.",
+            "color": "#45B7D1"
+        })
+
+    if any(g in genre_names for g in ["classic rock", "retro", "80s", "90s"]):
+        traits.append({
+            "name": "Nostalgic Soul",
+            "score": 70,
+            "description": "You love timeless classics.",
+            "color": "#96CEB4"
+        })
+
+    traits.append({
+        "name": "Social Listener",
+        "score": 65,
+        "description": "You enjoy sharing music and listening in social settings.",
+        "color": "#FECA57"
+    })
+
+    return MusicPersonality(
+        traits=traits,
+        overallProfile="The Eclectic Curator",
+        musicMatches=[
+            "Indie Pop Enthusiast", "Electronic Explorer", "Pop Connoisseur"
+        ],
+        recommendations=[
+            "Create themed playlists by decade",
+            "Explore more indie-folk artists",
+            "Try ambient or jazz for focus",
+            "Join music forums or Discords"
+        ],
+        insights=[
+            "You're open-minded and musically curious",
+            "Music is both a comfort and inspiration for you",
+            "You balance deep emotional resonance with sonic exploration"
+        ]
+    )
+
 
 
 @app.on_event("shutdown")

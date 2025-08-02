@@ -57,6 +57,7 @@ export function Sidebar() {
           </ul>
         </nav>
         
+        {!isAuthenticated && (
         <div className="mt-12 p-4 bg-[#282828] rounded-md">
           <h3 className="text-sm font-semibold mb-2">Connect with Spotify</h3>
           <SpotifyButton 
@@ -64,9 +65,10 @@ export function Sidebar() {
             className="w-full"
             icon={<SiSpotify />}
           >
-            {isAuthenticated ? "Connected" : "Connect Account"}
+            Connect Account
           </SpotifyButton>
         </div>
+        )}
       </div>
     </div>
   );

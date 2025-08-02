@@ -136,3 +136,78 @@ def insert_top_tracks(user_id: str, tracks: list, time_range: str,  conn):
         conn.commit()
 
 
+def get_tracks(user_id: str, period: str, all_flag:int =0) -> dict:
+
+    # check_redis = 
+
+    inputs = (user_id,)
+    
+    if all_flag != 1:
+
+        query = """
+            SELECT song_name, artist_name, image1 , image2 , image3, popularity, "rank", time_range
+            FROM music.songs
+            WHERE user_id = %s AND time_range = %s;
+        """
+
+        inputs += (period,)
+    else:
+        query=  """
+        SELECT song_name, artist_name, image1 , image2 , image3, popularity, "rank", time_range
+        FROM music.songs
+        WHERE user_id = %s;
+    """
+
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(query, inputs)
+        rows = cursor.fetchall()
+
+    finally:
+        # cursor.close()
+        release_db_conn(conn)
+    
+    columns = [desc[0] for desc in cursor.description]
+    result = [dict(zip(columns, row)) for row in rows]
+
+    return result
+
+
+def get_top_artists(user_id: str, period: str, all_flag:int =0) -> dict:
+    # check_redis for check cache
+
+    inputs = (user_id,)
+
+    if all_flag != 1:
+
+        query = """
+        SELECT name, popularity , image , time_range , rank
+        FROM music.artists
+        WHERE user_id = %s AND time_range = %s;
+        """
+
+        inputs += (period,)
+    else:
+        query=  """
+        SELECT song_name, artist_name, image1 , image2 , image3, popularity, "rank", time_range
+        FROM music.songs
+        WHERE user_id = %s;
+        """
+
+
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(query, inputs)
+        rows = cursor.fetchall()
+
+    finally:
+        # cursor.close()
+        release_db_conn(conn)
+
+    columns = [desc[0] for desc in cursor.description]
+    result = [dict(zip(columns, row)) for row in rows]
+
+    return result
+

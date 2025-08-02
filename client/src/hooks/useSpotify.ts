@@ -1,25 +1,3 @@
-// import { useState } from "react";
-
-// export function useSpotifyOperations() {
-//   // Assume authenticated (e.g. on login page after successful login)
-//   const [isAuthenticated] = useState(true);
-
-//   const login = () => {
-//     const baseUrl =
-//       process.env.NODE_ENV === "development"
-//         ? "http://localhost:8000"
-//         : "https://your-production-backend.com";
-
-//     window.location.href = `${baseUrl}/login`;
-//   };
-
-//   return {
-//     isAuthenticated,
-//     login,
-//   };
-// }
-
-
 import { useEffect, useState } from "react";
 
 const BACKEND_URL =
@@ -31,16 +9,18 @@ export function useSpotifyOperations() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [profileChecked, setProfileChecked] = useState(false);
 
   const login = () => {
-    window.location.href = `${BACKEND_URL}/login`; // this should redirect to backend login
+    window.location.href = `${BACKEND_URL}/login`;
   };
 
   useEffect(() => {
-    async function fetchProfile() {
+    // Delay fetch until first render finishes and cookie may be set
+    const fetchProfile = async () => {
       try {
         const res = await fetch(`${BACKEND_URL}/profile`, {
-          credentials: "include", // includes cookie (e.g. with JWT or session id)
+          credentials: "include",
         });
 
         if (!res.ok) throw new Error("Not authenticated");
@@ -50,10 +30,12 @@ export function useSpotifyOperations() {
         setDisplayName(data.display_name ?? "");
         setAvatarUrl(data.avatar_url ?? null);
       } catch (err) {
-        console.warn("Not authenticated or failed to fetch profile");
+        // Avoid re-fetching unnecessarily
         setIsAuthenticated(false);
+      } finally {
+        setProfileChecked(true);
       }
-    }
+    };
 
     fetchProfile();
   }, []);
@@ -63,11 +45,10 @@ export function useSpotifyOperations() {
   return {
     BACKEND_URL,
     isAuthenticated,
+    profileChecked, // useful to wait before showing UI
     login,
     displayName: displayName ?? "",
     avatarUrl,
     hasAvatar,
   };
 }
-
-
