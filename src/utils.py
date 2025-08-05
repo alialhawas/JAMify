@@ -149,10 +149,13 @@ def detect_evolution(tracks):
 
 def user_tracks(user_id: str, time_range: str = "long_term") -> dict:
     redis_con = get_redis()
-    access_token = redis_con.get(f"spotify:{user_id}:access_token")
 
-    if not access_token:
-        raise HTTPException(status_code=401, detail="User not authenticated")
+    token_data = redis_con.hgetall(f"spotify:{user_id}:tokens")
+
+    if not token_data:
+        raise HTTPException(status_code=401, detail="Spotify token not found in Redis")
+
+    access_token = token_data['access_token']
 
     time_range = time_range.lower()
 
@@ -173,7 +176,7 @@ def user_tracks(user_id: str, time_range: str = "long_term") -> dict:
     res = requests.get("https://api.spotify.com/v1/me/top/tracks", headers=headers, params=params)
 
     if res.status_code != 200:
-        raise HTTPException(status_code=res.status_code, detail=res.json())
+        raise HTTPException(status_code=res.status_code, detail="Failed to fetch top tracks from Spotify")
     
     track_data = res.json()
 
@@ -282,16 +285,38 @@ def get_audio_features(top_tracks: pd.DataFrame) -> dict:
 
     top_df = pd.DataFrame(top_tracks)
 
-    # Match songs in data using common columns — adjust these if needed
-    # For example, match on song_name and artist_name
+    # Create a copy of the data DataFrame to work with
+    data_copy = data.copy()
+    
+    # Extract the first artist from the artists list string in the data
+    # Handle the string representation of lists like "['Artist1', 'Artist2']"
+    def extract_first_artist(artists_str):
+        if pd.isna(artists_str) or not isinstance(artists_str, str):
+            return None
+        try:
+            # Remove quotes and brackets, split by comma, and get the first artist
+            artists_str = artists_str.strip()
+            if artists_str.startswith('[') and artists_str.endswith(']'):
+                artists_str = artists_str[1:-1]  # Remove brackets
+            # Split by comma and clean up quotes and spaces
+            artists = [artist.strip().strip("'\"") for artist in artists_str.split(',')]
+            return artists[0] if artists else None
+        except:
+            return None
+    
+    # Apply the function to extract first artist
+    data_copy['first_artist'] = data_copy['artists'].apply(extract_first_artist)
+    
+    # Join using the first artist name
     filtered_top_tracks = pd.merge(
         top_df,
-        data,
+        data_copy,
         how="inner",
-        on=["song_name", "artist_name"]  
+        left_on=["song_name", "artist_name"],
+        right_on=["name", "first_artist"]
     )
 
-    return  filtered_top_tracks.to_dict(orient="records")
+    return filtered_top_tracks.to_dict(orient="records")
 
 
 def compute_mirror_melody(user_id: str) -> Dict:
@@ -398,27 +423,157 @@ def compute_mirror_melody(user_id: str) -> Dict:
     }
 
 
-def score_traits(features: list[dict], genres: list[str]) -> dict:
+def score_traits(features: list[dict], genres: dict, top_tracks: list = None, top_artists: list = None) -> dict:
+    # Handle empty features case
+    if not features:
+        return {
+            "adventurer": 50,
+            "emotional": 50,
+            "trendy": 50,
+            "nostalgic": 50,
+            "social": 50,
+        }
+    
     avg_danceability = sum(f["danceability"] for f in features) / len(features)
     avg_valence = sum(f["valence"] for f in features) / len(features)
     avg_energy = sum(f["energy"] for f in features) / len(features)
     avg_acousticness = sum(f["acousticness"] for f in features) / len(features)
 
-    genre_flags = {g.lower(): True for g in genres}
+    # Handle empty genres dictionary
+    if not genres:
+        # Use listening pattern analysis when no genre data is available
+        if top_tracks and top_artists:
+            pattern_scores = analyze_user_listening_patterns(top_tracks, top_artists)
+            # Combine pattern analysis with audio features
+            scores = {
+                "adventurer": (pattern_scores["adventurer"] + avg_energy * 70) / 2,
+                "emotional": (pattern_scores["emotional"] + (1 - avg_valence) * 100) / 2,
+                "trendy": (pattern_scores["trendy"] + 60) / 2,
+                "nostalgic": (pattern_scores["nostalgic"] + 50) / 2,
+                "social": (pattern_scores["social"] + (avg_danceability * 100 if avg_danceability > 0.5 else 40)) / 2,
+            }
+        else:
+            # Fallback to audio features only
+            scores = {
+                "adventurer": avg_energy * 70,
+                "emotional": (1 - avg_valence) * 100,
+                "trendy": 60,
+                "nostalgic": 50,
+                "social": avg_danceability * 100 if avg_danceability > 0.5 else 40,
+            }
+    else:
+        # Convert genre dictionary keys to lowercase for matching
+        genre_flags = {g.lower(): count for g, count in genres.items()}
 
-    scores = {
-        "adventurer": avg_energy * 100 if "indie" in genre_flags or "experimental" in genre_flags else avg_energy * 70,
-        "emotional": (1 - avg_valence) * 100,
-        "trendy": 90 if "pop" in genre_flags or "top 40" in genre_flags else 60,
-        "nostalgic": 80 if any(g in genre_flags for g in ["80s", "90s", "classic rock"]) else 50,
-        "social": avg_danceability * 100 if avg_danceability > 0.5 else 40,
-    }
+        scores = {
+            "adventurer": avg_energy * 100 if "indie" in genre_flags or "experimental" in genre_flags else avg_energy * 70,
+            "emotional": (1 - avg_valence) * 100,
+            "trendy": 90 if "pop" in genre_flags or "top 40" in genre_flags else 60,
+            "nostalgic": 80 if any(g in genre_flags for g in ["80s", "90s", "classic rock"]) else 50,
+            "social": avg_danceability * 100 if avg_danceability > 0.5 else 40,
+        }
 
     return scores
 
 
+def analyze_user_listening_patterns(top_tracks: list, top_artists: list) -> dict:
+    """
+    Analyze user's listening patterns from top tracks and artists to generate personality scores.
+    
+    Args:
+        top_tracks: List of user's top tracks
+        top_artists: List of user's top artists
+        
+    Returns:
+        dict: Personality scores based on listening patterns
+    """
+    if not top_tracks and not top_artists:
+        return {
+            "adventurer": 50,
+            "emotional": 50,
+            "trendy": 50,
+            "nostalgic": 50,
+            "social": 50,
+        }
+    
+    scores = {
+        "adventurer": 50,
+        "emotional": 50,
+        "trendy": 50,
+        "nostalgic": 50,
+        "social": 50,
+    }
+    
+    # Analyze artist diversity for adventurer trait
+    if top_artists:
+        unique_artists = len(set(artist.get("name", "") for artist in top_artists))
+        total_artists = len(top_artists)
+        diversity_score = (unique_artists / total_artists) * 100 if total_artists > 0 else 50
+        
+        # Check for indie/alternative artists
+        indie_indicators = ["indie", "alternative", "experimental", "underground", "bedroom", "folk", "psychedelic"]
+        indie_count = sum(1 for artist in top_artists 
+                         if any(indicator in artist.get("name", "").lower() 
+                               for indicator in indie_indicators))
+        
+        # Check for less popular artists (more adventurous)
+        less_popular_artists = sum(1 for artist in top_artists 
+                                  if artist.get("popularity", 100) < 60)
+        
+        scores["adventurer"] = min(100, diversity_score + (indie_count * 8) + (less_popular_artists * 3))
+    
+    # Analyze track characteristics for emotional trait
+    if top_tracks:
+        # Check for emotional indicators in track names
+        emotional_keywords = ["love", "heart", "sad", "lonely", "miss", "cry", "tears", 
+                            "feel", "soul", "pain", "hurt", "broken", "dream", "hope",
+                            "forever", "always", "never", "away", "home", "memory"]
+        emotional_tracks = sum(1 for track in top_tracks 
+                             if any(keyword in track.get("song_name", "").lower() 
+                                   for keyword in emotional_keywords))
+        
+        # Check for slower tempo songs (likely more emotional)
+        slow_tempo_count = sum(1 for track in top_tracks 
+                             if track.get("tempo", 120) < 100)
+        
+        # Check for acoustic songs (often more emotional)
+        acoustic_count = sum(1 for track in top_tracks 
+                           if track.get("acousticness", 0) > 0.7)
+        
+        scores["emotional"] = min(100, 50 + (emotional_tracks * 4) + (slow_tempo_count * 2) + (acoustic_count * 3))
+    
+    # Analyze popularity for trendy trait
+    if top_artists:
+        popular_artists = sum(1 for artist in top_artists 
+                            if artist.get("popularity", 0) > 70)
+        total_artists = len(top_artists)
+        popularity_score = (popular_artists / total_artists) * 100 if total_artists > 0 else 50
+        scores["trendy"] = min(100, popularity_score + 20)
+    
+    # Analyze release years for nostalgic trait
+    if top_tracks:
+        current_year = 2024
+        old_tracks = sum(1 for track in top_tracks 
+                        if track.get("album", {}).get("release_date", "").startswith("20") and
+                        int(track.get("album", {}).get("release_date", "")[:4]) < current_year - 5)
+        
+        very_old_tracks = sum(1 for track in top_tracks 
+                             if track.get("album", {}).get("release_date", "").startswith("19"))
+        
+        scores["nostalgic"] = min(100, 50 + (old_tracks * 5) + (very_old_tracks * 10))
+    
+    # Analyze danceability for social trait
+    if top_tracks:
+        danceable_tracks = sum(1 for track in top_tracks 
+                             if track.get("danceability", 0) > 0.6)
+        total_tracks = len(top_tracks)
+        danceability_score = (danceable_tracks / total_tracks) * 100 if total_tracks > 0 else 50
+        scores["social"] = min(100, danceability_score + 20)
+    
+    return scores
 
-def create_profile(scores: dict, genres: list[str]) -> tuple[str, list[str], list[str]]:
+
+def create_profile(scores: dict, genres: dict) -> tuple[str, list[str], list[str]]:
     dominant_trait = max(scores, key=scores.get)
 
     profile_map = {
@@ -475,6 +630,20 @@ def create_profile(scores: dict, genres: list[str]) -> tuple[str, list[str], lis
         ]
     }
 
+    # Handle empty genres case
+    if not genres:
+        # Add genre-specific recommendations for when no genre data is available
+        if dominant_trait == "adventurer":
+            rec_map["adventurer"].append("Try exploring different genres to discover your musical preferences.")
+        elif dominant_trait == "emotional":
+            rec_map["emotional"].append("Explore various artists to find what resonates with your emotions.")
+        elif dominant_trait == "trendy":
+            rec_map["trendy"].append("Check out current popular playlists to stay updated with trends.")
+        elif dominant_trait == "nostalgic":
+            rec_map["nostalgic"].append("Explore music from different decades to find your nostalgic favorites.")
+        elif dominant_trait == "social":
+            rec_map["social"].append("Try collaborative playlists to enhance your social music experience.")
+
     return (
         profile_map[dominant_trait],
         insight_map[dominant_trait],
@@ -482,16 +651,64 @@ def create_profile(scores: dict, genres: list[str]) -> tuple[str, list[str], lis
     )
 
 
-def generate_music_personality(user_id) -> MusicPersonality:
+def get_genres(top_tracks) -> dict:
+    if top_tracks is None or len(top_tracks) == 0:
+        return {}
 
+    top_df = pd.DataFrame(top_tracks)
+    
+
+    data_copy = data.copy()
+    
+    # Extract the first artist from the artists list string in the data
+    # Handle the string representation of lists like "['Artist1', 'Artist2']"
+    def extract_first_artist(artists_str):
+        if pd.isna(artists_str) or not isinstance(artists_str, str):
+            return None
+        try:
+            # Remove quotes and brackets, split by comma, and get the first artist
+            artists_str = artists_str.strip()
+            if artists_str.startswith('[') and artists_str.endswith(']'):
+                artists_str = artists_str[1:-1]  # Remove brackets
+            # Split by comma and clean up quotes and spaces
+            artists = [artist.strip().strip("'\"") for artist in artists_str.split(',')]
+            return artists[0] if artists else None
+        except:
+            return None
+    
+    # Apply the function to extract first artist
+    data_copy['first_artist'] = data_copy['artists'].apply(extract_first_artist)
+    
+    # Join using the first artist name
+    filtered_top_tracks = pd.merge(
+        top_df,
+        data_copy,
+        how="inner",
+        left_on=["name", "artists"],
+        right_on=["name", "first_artist"]
+    )
+
+    # Extract genres and their counts from the predicted_genre column
+    if 'predicted_genre' in filtered_top_tracks.columns:
+        genre_counts = filtered_top_tracks['predicted_genre'].dropna().value_counts().to_dict()
+    else:
+        genre_counts = {}
+    
+    return genre_counts
+
+
+
+
+def generate_music_personality(user_id) -> MusicPersonality:
 
     top_artists = get_top_artists(user_id)
 
     top_tracks = get_tracks(user_id)
-
+    
     audio_features = get_audio_features(top_tracks)
+    genres = get_genres(top_tracks)
 
-    scores = score_traits(audio_features, genres)
+    scores = score_traits(audio_features, genres, top_tracks, top_artists)
     profile, insights, recommendations = create_profile(scores, genres)
 
     trait_data = [

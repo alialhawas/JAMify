@@ -64,7 +64,8 @@ from slowapi.errors import RateLimitExceeded
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-SCOPES = "user-top-read"
+SCOPES = "user-read-email user-read-private user-top-read"
+
 
 ENV = os.getenv('ENV')
 
@@ -117,7 +118,7 @@ features = [
 def recommend_songs(song_list: List[Dict], spotify_data: pd.DataFrame, n_songs=10):
     metadata_cols = ['name', 'year', 'artists', 'predicted_genre']
 
-    song_dict = flatten_dict_list(song_list) # => {'name': ['Blinding Lights', 'Bad Guy', 'Shape of You'], 'year': [2019, 2019, 2017]}
+    song_dict = flatten_dict_list(song_list) 
     song_center = get_mean_vector(song_list, spotify_data)
 
     if song_center is None:
@@ -273,7 +274,7 @@ async def callback(request: Request, code: str):
         res = await client.post(token_url, data=payload)
 
         if res.status_code != 200:
-            return JSONResponse(status_code=400, content={"error": "Token exchange failed"})
+            raise HTTPException(status_code=res.status_code, content={"error": "Token exchange failed"})
 
         token_info = res.json()
         access_token = token_info["access_token"]
@@ -283,6 +284,13 @@ async def callback(request: Request, code: str):
         user_res = await client.get("https://api.spotify.com/v1/me", headers={
             "Authorization": f"Bearer {access_token}"
         })
+
+        print("Access token:", access_token)
+
+        if user_res.status_code != 200:
+            print("Spotify /me error response:", user_res.text)
+            raise HTTPException(status_code=user_res.status_code, detail="Failed to fetch user info from Spotify")
+
         user_info = user_res.json()
         user_id = user_info["id"]
 
@@ -575,7 +583,11 @@ def get_spotify_profile(request: Request):
     }
     
     resp = requests.get("https://api.spotify.com/v1/me", headers=headers)
-    data = resp.json()
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code= resp.status_code, detail="Spotify API call failed")
+    
+    data =  resp.json()
 
     images = data.get("images", [])
     has_avatar = len(images) > 0
@@ -675,7 +687,6 @@ def analyze_music_personality(top_tracks, top_artists, top_genres, features) -> 
             "You balance deep emotional resonance with sonic exploration"
         ]
     )
-
 
 
 @app.on_event("shutdown")

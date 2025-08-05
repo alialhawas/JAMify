@@ -83,8 +83,7 @@ app.use((req, res, next) => {
   const port = 8081; // TODO fix this for prod 
   server.listen({
     port,
-    host: "0.0.0.0",
-    reusePort: true,
+    host: "0.0.0.0"
   }, () => {
     log(`serving on port ${port}`);
   });
